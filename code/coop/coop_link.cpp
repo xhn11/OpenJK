@@ -36,6 +36,10 @@ void Coop_AddReliable( const char *cmd ) {
 	if ( coop.state != COOP_LINK_ACTIVE ) {
 		return;
 	}
+	if ( (int)strlen( cmd ) > COOP_MAX_WIRE_CMD_LEN ) {
+		Com_Printf( "COOP: reliable command too long (%d chars), dropped\n", (int)strlen( cmd ) );
+		return;
+	}
 	if ( !CoopRel_Add( &coop.rel, cmd ) ) {
 		Coop_CloseLink( "reliable command overflow", qtrue );
 	}

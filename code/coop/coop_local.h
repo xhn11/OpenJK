@@ -9,6 +9,8 @@
 #define COOP_CONNECT_RESEND_MS		1000
 #define COOP_CONNECT_TIMEOUT_MS		15000
 #define COOP_PACKET_INTERVAL_MS		33
+// MSG_ReadString stops at MAX_STRING_CHARS-1 chars without consuming the NUL, so 1022 is the longest string that round-trips
+#define COOP_MAX_WIRE_CMD_LEN		( MAX_STRING_CHARS - 2 )
 
 typedef enum { COOP_LINK_IDLE, COOP_LINK_LISTENING, COOP_LINK_CONNECTING, COOP_LINK_ACTIVE } coopLinkState_t;
 
