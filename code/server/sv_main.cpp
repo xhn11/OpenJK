@@ -24,6 +24,7 @@ along with this program; if not, see <http://www.gnu.org/licenses/>.
 #include "../server/exe_headers.h"
 
 #include "server.h"
+#include "../coop/coop_public.h"
 /*
 Ghoul2 Insert Start
 */
@@ -463,14 +464,17 @@ void SV_Frame( int msec,float fractionMsec ) {
 	}
 	frameMsec = 1000 / sv_fps->integer ;
 
-	sv.timeResidual += msec;
-	sv.timeResidualFraction+=fractionMsec;
-	if (sv.timeResidualFraction>=1.0f)
-	{
-		sv.timeResidualFraction-=1.0f;
-		if (cl_newClock&&cl_newClock->integer)
+	if ( !Coop_GuestAdvanceTime( frameMsec ) )
+	{// vanilla; a coop guest's time follows the host's snapshots instead (code/coop/coop_snapshot.cpp)
+		sv.timeResidual += msec;
+		sv.timeResidualFraction+=fractionMsec;
+		if (sv.timeResidualFraction>=1.0f)
 		{
-			sv.timeResidual++;
+			sv.timeResidualFraction-=1.0f;
+			if (cl_newClock&&cl_newClock->integer)
+			{
+				sv.timeResidual++;
+			}
 		}
 	}
 	if ( sv.timeResidual < frameMsec ) {

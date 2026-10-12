@@ -47,6 +47,7 @@ static void Coop_SendMap( void ) {
 void Coop_OnLinkUp( void ) {
 	memset( &sess, 0, sizeof( sess ) );
 	CoopCS_LinkReset();
+	CoopSnapshot_LinkReset();
 	if ( coop.role == COOP_ROLE_HOST && Coop_LocalMapRunning() ) {
 		Coop_SendMap();
 	}
@@ -59,6 +60,7 @@ void Coop_OnLinkDown( const char *reason ) {
 		Cbuf_AddText( "disconnect\n" );
 	}
 	CoopCS_LinkReset();
+	CoopSnapshot_LinkReset();
 	memset( &sess, 0, sizeof( sess ) );
 }
 
@@ -95,6 +97,7 @@ void Coop_SessionFrame( void ) {
 		}
 	}
 	CoopCS_Frame();
+	CoopSnapshot_Frame();
 }
 
 qboolean Coop_ExecuteReliableCmd( const char *cmd ) {
@@ -115,6 +118,7 @@ qboolean Coop_ExecuteReliableCmd( const char *cmd ) {
 		sess.loadPending = qtrue;
 		sess.readySent = qfalse;
 		CoopCS_NewMap();
+		CoopSnapshot_NewMap();
 		return qtrue;
 	}
 	if ( !Q_stricmp( c, "coop_ready" ) ) {
@@ -131,6 +135,7 @@ qboolean Coop_ExecuteReliableCmd( const char *cmd ) {
 		}
 		sess.guestReadyGen = coopHostMapGen;
 		CoopCS_GuestReady();
+		CoopSnapshot_GuestReady();
 		sess.onWorldPending = qtrue;
 		Com_Printf( "COOP: guest entered %s\n", sv_mapname->string );
 		return qtrue;
@@ -142,12 +147,15 @@ qboolean Coop_ExecuteReliableCmd( const char *cmd ) {
 // payloads: configstrings (Task 8), snapshots from Task 11
 void Coop_WritePayload( msg_t *msg ) {
 	CoopCS_Write( msg );		// configstrings first: snapshots refer to their indices
+	CoopSnapshot_Write( msg );
 }
 
 qboolean Coop_ParsePayload( int cmd, msg_t *msg ) {
 	switch ( cmd ) {
 	case coop_cs:		return CoopCS_Parse( msg );
 	case coop_csack:	return CoopCS_ParseAck( msg );
+	case coop_snapshot:	return CoopSnapshot_Parse( msg );
+	case coop_snapack:	return CoopSnapshot_ParseAck( msg );
 	default:			return qfalse;	// unknown payload: the link closes
 	}
 }

@@ -516,6 +516,7 @@ void Coop_Init( void ) {
 	Cmd_AddCommand( "coop_sendtest", Coop_SendTest_f );
 	Cmd_AddCommand( "coop_reloadmap", Coop_ReloadMap_f );
 	Coop_SessionInit();
+	CoopSnapshot_Init();
 	Coop_Reset( COOP_ROLE_NONE, COOP_LINK_IDLE );
 }
 

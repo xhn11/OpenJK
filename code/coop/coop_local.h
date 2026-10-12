@@ -5,7 +5,7 @@
 #include "coop_reliable.h"
 #include "coop_netchan.h"
 
-#define COOP_PROTOCOL_VERSION		4			// 4: coop_cs / coop_csack
+#define COOP_PROTOCOL_VERSION		5			// 5: coop_snapshot / coop_snapack
 #define COOP_DEFAULT_PORT			29170
 #define COOP_CONNECT_RESEND_MS		1000
 #define COOP_CONNECT_TIMEOUT_MS		15000
@@ -78,3 +78,13 @@ qboolean	CoopCS_Parse( msg_t *msg );					// guest, inside Com_EventLoop: only st
 qboolean	CoopCS_ParseAck( msg_t *msg );				// host
 void		CoopCS_Frame( void );						// guest, Coop_Frame: applies stored strings in batches
 qboolean	CoopCS_Synced( void );						// guest: the first full set is applied
+
+// coop_snapshot.cpp
+void		CoopSnapshot_Init( void );					// Coop_Init: cvars
+void		CoopSnapshot_GuestReady( void );			// host: the guest entered the map, start against nothing
+void		CoopSnapshot_NewMap( void );				// guest: coop_map arrived
+void		CoopSnapshot_LinkReset( void );
+void		CoopSnapshot_Write( msg_t *msg );			// host: coop_snapshot, guest: coop_snapack
+qboolean	CoopSnapshot_Parse( msg_t *msg );			// guest, inside Com_EventLoop: only copies
+qboolean	CoopSnapshot_ParseAck( msg_t *msg );		// host
+void		CoopSnapshot_Frame( void );					// guest, Coop_Frame: decode and apply the newest snapshot

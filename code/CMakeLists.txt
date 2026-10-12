@@ -179,6 +179,7 @@ if(BuildSPEngine OR BuildJK2SPEngine)
 		"${SPDir}/coop/coop_reliable.cpp"
 		"${SPDir}/coop/coop_session.cpp"
 		"${SPDir}/coop/coop_snap.cpp"
+		"${SPDir}/coop/coop_snapshot.cpp"
 
 		"${SPDir}/qcommon/q_shared.cpp"
 		"${SPDir}/qcommon/q_shared.h"

@@ -15,3 +15,4 @@ int			Coop_ReliableFree( void );						// free slots in the outgoing reliable que
 void		Coop_MapLoadStarting( void );					// SV_SpawnServer start: tell the peer, the load blocks all packets
 void		Coop_MapLoadFinished( void );					// SV_SpawnServer end
 void		Coop_ConfigstringChanged( int index );			// SV_SetConfigstring: index got a new value
+qboolean	Coop_GuestAdvanceTime( int frameMsec );			// SV_Frame: guest time follows the host's snapshots; qfalse = vanilla
