@@ -5,7 +5,7 @@
 #include "coop_reliable.h"
 #include "coop_netchan.h"
 
-#define COOP_PROTOCOL_VERSION		5			// 5: coop_snapshot / coop_snapack
+#define COOP_PROTOCOL_VERSION		6			// 6: coop_view
 #define COOP_DEFAULT_PORT			29170
 #define COOP_CONNECT_RESEND_MS		1000
 #define COOP_CONNECT_TIMEOUT_MS		15000
@@ -42,8 +42,8 @@ typedef struct {
 extern coopLink_t	coop;
 extern cvar_t		*coop_port, *coop_name, *coop_timeout, *coop_debug, *coop_autotest;
 
-enum { coop_bad, coop_eof, coop_reliable, coop_snapshot /*Task 11*/, coop_snapack /*Task 11*/, coop_migrate /*M6*/,
-	coop_test /*debug: fragmentation self-test*/, coop_cs, coop_csack };
+enum { coop_bad, coop_eof, coop_reliable, coop_snapshot, coop_snapack, coop_migrate /*M6*/,
+	coop_test /*debug: fragmentation self-test*/, coop_cs, coop_csack, coop_view };
 
 // Bytes a payload writer may still add to an outgoing packet (COOP_MSG_TAIL stays free for coop_eof).
 static inline int Coop_MsgRoom( const msg_t *msg ) {
@@ -88,3 +88,5 @@ void		CoopSnapshot_Write( msg_t *msg );			// host: coop_snapshot, guest: coop_sn
 qboolean	CoopSnapshot_Parse( msg_t *msg );			// guest, inside Com_EventLoop: only copies
 qboolean	CoopSnapshot_ParseAck( msg_t *msg );		// host
 void		CoopSnapshot_Frame( void );					// guest, Coop_Frame: decode and apply the newest snapshot
+void		CoopView_Write( msg_t *msg );				// guest -> host: coop_view (design 8)
+qboolean	CoopView_Parse( msg_t *msg );				// host

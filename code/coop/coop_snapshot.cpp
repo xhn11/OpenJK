@@ -45,6 +45,11 @@ static qboolean			guestSynced;
 static qboolean			guestNeedSweep;		// a frame was applied without a known previous one
 static int				applyNpcs;
 
+// the partner's eye position (design 8): host <- coop_view, guest <- coop_snapshot header
+static vec3_t			peerView;
+static qboolean			peerViewValid;
+static qboolean			peerViewLogged;
+
 // host scratch
 static entityState_t	gatherEs[COOP_SNAP_MAX_NUM];
 static coopEntExtra_t	gatherEx[COOP_SNAP_MAX_NUM];
@@ -75,6 +80,8 @@ void CoopSnapshot_GuestReady( void ) {
 	if ( snapRingReady ) {
 		CoopSnap_Clear( &snapRing );
 	}
+	peerViewValid = qfalse;
+	peerViewLogged = qfalse;
 }
 
 void CoopSnapshot_NewMap( void ) {
@@ -87,6 +94,8 @@ void CoopSnapshot_NewMap( void ) {
 	if ( snapRingReady ) {
 		CoopSnap_Clear( &snapRing );
 	}
+	peerViewValid = qfalse;
+	peerViewLogged = qfalse;
 }
 
 void CoopSnapshot_LinkReset( void ) {
@@ -242,8 +251,10 @@ qboolean CoopSnapshot_Parse( msg_t *msg ) {
 	const int esSize = MSG_ReadShort( msg );
 	const int psSize = MSG_ReadShort( msg );
 	const int exSize = MSG_ReadShort( msg );
+	vec3_t view;
 	for ( int i = 0; i < 3; i++ ) {
-		MSG_ReadLong( msg );	// the host's view origin, used from Task 15
+		const int bits = MSG_ReadLong( msg );
+		memcpy( &view[i], &bits, 4 );
 	}
 	const int len = MSG_ReadLong( msg );
 	if ( len < 0 || len > msg->cursize - msg->readcount ) {
@@ -265,6 +276,8 @@ qboolean CoopSnapshot_Parse( msg_t *msg ) {
 	}
 	memcpy( guestPending, blob, len );	// Coop_Frame applies it; only the newest one matters
 	guestPendingLen = len;
+	VectorCopy( view, peerView );
+	peerViewValid = qtrue;
 	return qtrue;
 }
 
@@ -360,6 +373,49 @@ void CoopSnapshot_Frame( void ) {
 	}
 }
 
+void CoopView_Write( msg_t *msg ) {
+	if ( coop.role != COOP_ROLE_GUEST || !Coop_GuestInWorld() || Coop_MsgRoom( msg ) < 17 ) {
+		return;
+	}
+	const gentity_t *player = SV_GentityNum( 0 );
+	if ( !player->inuse || !player->client ) {
+		return;
+	}
+	MSG_WriteByte( msg, coop_view );
+	MSG_WriteLong( msg, Coop_MapGen() );
+	for ( int i = 0; i < 3; i++ ) {
+		CoopSnapshot_WriteFloat( msg, player->client->serverViewOrg[i] );
+	}
+}
+
+qboolean CoopView_Parse( msg_t *msg ) {
+	const int gen = MSG_ReadLong( msg );
+	vec3_t view;
+	for ( int i = 0; i < 3; i++ ) {
+		const int bits = MSG_ReadLong( msg );
+		memcpy( &view[i], &bits, 4 );
+	}
+	if ( coop.role == COOP_ROLE_HOST && gen == Coop_MapGen() ) {
+		VectorCopy( view, peerView );
+		peerViewValid = qtrue;
+	}
+	return qtrue;
+}
+
+qboolean Coop_PeerViewOrigin( vec3_t org ) {
+	const qboolean inWorld = coop.role == COOP_ROLE_HOST ? Coop_HostGuestInWorld()
+		: (qboolean)( coop.role == COOP_ROLE_GUEST && Coop_GuestInWorld() && guestSynced );
+	if ( !inWorld || !peerViewValid ) {
+		return qfalse;
+	}
+	if ( !peerViewLogged ) {
+		peerViewLogged = qtrue;
+		Com_Printf( "COOP: partner view added to snapshots\n" );
+	}
+	VectorCopy( peerView, org );
+	return qtrue;
+}
+
 qboolean Coop_GuestAdvanceTime( int frameMsec ) {
 	if ( coop.role != COOP_ROLE_GUEST || !guestHaveTime || !Coop_GuestInWorld() ) {
 		return qfalse;
@@ -390,5 +446,8 @@ qboolean	CoopSnapshot_Parse( msg_t * ) { return qfalse; }
 qboolean	CoopSnapshot_ParseAck( msg_t * ) { return qfalse; }
 void		CoopSnapshot_Frame( void ) {}
 qboolean	Coop_GuestAdvanceTime( int ) { return qfalse; }
+void		CoopView_Write( msg_t * ) {}
+qboolean	CoopView_Parse( msg_t * ) { return qfalse; }
+qboolean	Coop_PeerViewOrigin( vec3_t ) { return qfalse; }
 
 #endif

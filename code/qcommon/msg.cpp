@@ -816,7 +816,7 @@ void MSG_WriteEntity( msg_t *msg, struct entityState_s *to, int removeNum)
 		MSG_WriteBits(msg, to->number, GENTITYNUM_BITS);
 		MSG_WriteBits(msg, 0, 1); //not removed
 	}
-	assert(( to - svs.snapshotEntities ) >= 0 && ( to - svs.snapshotEntities ) < 512);
+	assert(( to - svs.snapshotEntities ) >= 0 && ( to - svs.snapshotEntities ) < svs.numSnapshotEntities);
 	MSG_WriteLong(msg, to - svs.snapshotEntities);
 }
 

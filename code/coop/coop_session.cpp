@@ -196,6 +196,7 @@ qboolean Coop_ExecuteReliableCmd( const char *cmd ) {
 // payloads: configstrings (Task 8), snapshots from Task 11
 void Coop_WritePayload( msg_t *msg ) {
 	CoopCS_Write( msg );		// configstrings first: snapshots refer to their indices
+	CoopView_Write( msg );		// 17 bytes, before the snapshot takes the rest of the budget
 	CoopSnapshot_Write( msg );
 }
 
@@ -205,6 +206,7 @@ qboolean Coop_ParsePayload( int cmd, msg_t *msg ) {
 	case coop_csack:	return CoopCS_ParseAck( msg );
 	case coop_snapshot:	return CoopSnapshot_Parse( msg );
 	case coop_snapack:	return CoopSnapshot_ParseAck( msg );
+	case coop_view:		return CoopView_Parse( msg );
 	default:			return qfalse;	// unknown payload: the link closes
 	}
 }

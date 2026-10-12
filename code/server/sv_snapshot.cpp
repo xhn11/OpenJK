@@ -25,6 +25,7 @@ along with this program; if not, see <http://www.gnu.org/licenses/>.
 
 #include "../client/vmachine.h"
 #include "server.h"
+#include "../coop/coop_public.h"
 
 /*
 =============================================================================
@@ -577,6 +578,17 @@ static clientSnapshot_t *SV_BuildClientSnapshot( client_t *client ) {
 	// add all the entities directly visible to the eye, which
 	// may include portal entities that merge other viewpoints
 	SV_AddEntitiesVisibleFromPoint( org, frame, &entityNumbers, qfalse );
+	// design 8: also what the coop partner sees, so cgame computes renderInfo for it and the AI can read it;
+	// the renderer's area mask stays ours
+	vec3_t	coopOrg;
+	if ( Coop_PeerViewOrigin( coopOrg ) ) {
+		byte		savedAreabits[MAX_MAP_AREA_BYTES];
+		const int	savedAreabytes = frame->areabytes;
+		memcpy( savedAreabits, frame->areabits, sizeof( savedAreabits ) );
+		SV_AddEntitiesVisibleFromPoint( coopOrg, frame, &entityNumbers, qfalse );
+		memcpy( frame->areabits, savedAreabits, sizeof( savedAreabits ) );
+		frame->areabytes = savedAreabytes;
+	}
 	/*
 	//was in here for debugging- print list of all entities in snapshot when you go over the limit
 	if ( entityNumbers.numSnapshotEntities >= 256 )

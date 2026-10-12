@@ -179,7 +179,11 @@ void SV_Startup( void ) {
 	}
 
 	svs.clients = (struct client_s *) Z_Malloc ( sizeof(client_t) * 1, TAG_CLIENTS, qtrue );
+#ifdef JK2_MODE
+	svs.numSnapshotEntities = PACKET_BACKUP * 128;	// coop: snapshots also carry what the partner sees (design 8)
+#else
 	svs.numSnapshotEntities = 2 * 4 * 64;
+#endif
 	svs.initialized = qtrue;
 
 	Cvar_Set( "sv_running", "1" );
