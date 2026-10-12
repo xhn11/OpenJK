@@ -27,7 +27,7 @@ New-Item -ItemType Directory -Force "$work\host", "$work\guest" | Out-Null
 
 function Start-Instance([string]$name, [int]$slot, [string[]]$extra) {
   $display = if ($Visible) { Get-WindowArgs $slot } else { Get-HeadlessArgs }
-  $argLine = "+set fs_basepath `"$base`" +set fs_homepath `"$work\$name`" +set logfile 2 " + $display + " " + ($extra -join " ")
+  $argLine = "+set fs_basepath `"$base`" +set fs_cdpath `"$bin`" +set fs_homepath `"$work\$name`" +set logfile 2 " + $display + " " + ($extra -join " ")
   Start-Process -FilePath $exe -ArgumentList $argLine -WorkingDirectory $bin -PassThru
 }
 
@@ -56,6 +56,8 @@ function Test-Log([string]$name, [string[]]$patterns) {
   if (-not $log) { if ($patterns.Count) { Write-Host "[FAIL] ${name}: no qconsole.log"; return $false }; return $true }
   $text = Get-Content $log.FullName -Raw
   $ok = $true
+  if ($text -match 'Failed to load jospgame') { Write-Host "[FAIL] ${name}: game DLL failed to load"; $ok = $false }
+  if ($name -eq "host") { $patterns = @('------- Game Initialization -------') + $patterns }
   foreach ($p in $patterns) {
     if ($text -match $p) { Write-Host "[PASS] $name ~ $p" } else { Write-Host "[FAIL] $name missing: $p"; $ok = $false }
   }

@@ -13,7 +13,7 @@ $homeDir = Join-Path $root "build\coop-play"                       # zůstává 
 New-Item -ItemType Directory -Force "$homeDir\host", "$homeDir\guest" | Out-Null
 
 function Start-Instance([string]$name, [int]$slot, [string[]]$extra) {
-  $argLine = "+set fs_basepath `"$base`" +set fs_homepath `"$homeDir\$name`" +set logfile 2 " + (Get-WindowArgs $slot) + " " + ($extra -join " ")
+  $argLine = "+set fs_basepath `"$base`" +set fs_cdpath `"$bin`" +set fs_homepath `"$homeDir\$name`" +set logfile 2 " + (Get-WindowArgs $slot) + " " + ($extra -join " ")
   Start-Process -FilePath $exe -ArgumentList $argLine -WorkingDirectory $bin -PassThru
 }
 
