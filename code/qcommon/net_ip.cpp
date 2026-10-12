@@ -43,8 +43,31 @@ static qboolean NET_IP_Startup( void ) {
 	return qtrue;
 }
 
+#define NET_IP_SOCKET_BUFFER	( 1024 * 1024 )		// room for bursts of fragments (a coop message is up to 55 of them)
+
+static qboolean NET_IP_SetNonBlocking( SOCKET s ) {
+#ifdef _WIN32
+	u_long nonBlocking = 1;
+	return (qboolean)( ioctlsocket( s, FIONBIO, &nonBlocking ) != SOCKET_ERROR );
+#else
+	const int flags = fcntl( s, F_GETFL, 0 );
+	return (qboolean)( flags != -1 && fcntl( s, F_SETFL, flags | O_NONBLOCK ) != -1 );
+#endif
+}
+
+static void NET_IP_SetBufferSize( SOCKET s, int option, const char *name ) {
+	const int size = NET_IP_SOCKET_BUFFER;
+	if ( setsockopt( s, SOL_SOCKET, option, (const char *)&size, sizeof( size ) ) == SOCKET_ERROR ) {
+		Com_DPrintf( "NET_IP_Open: setting %s to %d failed (%d)\n", name, size, SOCK_LAST_ERROR );
+	}
+}
+
 qboolean NET_IP_Open( int port ) {
 	NET_IP_Close();
+	if ( port != PORT_ANY && ( port < 1 || port > 65535 ) ) {
+		Com_Printf( "NET_IP_Open: invalid port %d (use 1..65535)\n", port );
+		return qfalse;
+	}
 	if ( !NET_IP_Startup() ) {
 		return qfalse;
 	}
@@ -53,12 +76,13 @@ qboolean NET_IP_Open( int port ) {
 		Com_Printf( "NET_IP_Open: socket failed (%d)\n", SOCK_LAST_ERROR );
 		return qfalse;
 	}
-#ifdef _WIN32
-	u_long nonBlocking = 1;
-	ioctlsocket( s, FIONBIO, &nonBlocking );
-#else
-	fcntl( s, F_SETFL, fcntl( s, F_GETFL, 0 ) | O_NONBLOCK );
-#endif
+	if ( !NET_IP_SetNonBlocking( s ) ) {
+		Com_Printf( "NET_IP_Open: cannot make the socket non-blocking (%d)\n", SOCK_LAST_ERROR );
+		closesocket( s );
+		return qfalse;
+	}
+	NET_IP_SetBufferSize( s, SO_RCVBUF, "SO_RCVBUF" );
+	NET_IP_SetBufferSize( s, SO_SNDBUF, "SO_SNDBUF" );
 	struct sockaddr_in addr;
 	memset( &addr, 0, sizeof( addr ) );
 	addr.sin_family = AF_INET;
@@ -98,6 +122,16 @@ qboolean NET_IP_GetPacket( netadr_t *from, msg_t *msg ) {
 			if ( err == SOCK_CONNRESET ) {
 				continue;	// ICMP port unreachable from a previous send (Windows), skip it
 			}
+#ifdef _WIN32
+			if ( err == WSAEMSGSIZE ) {
+				static qboolean warned = qfalse;
+				if ( !warned ) {
+					Com_DPrintf( "NET_IP_GetPacket: datagram larger than %d bytes dropped\n", msg->maxsize );
+					warned = qtrue;
+				}
+				continue;	// truncated datagram, skip it
+			}
+#endif
 			if ( err != SOCK_WOULDBLOCK ) {
 				Com_Printf( "NET_IP_GetPacket: error %d\n", err );
 			}
