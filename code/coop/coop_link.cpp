@@ -4,6 +4,7 @@
 coopLink_t	coop;
 cvar_t		*coop_port, *coop_name, *coop_timeout, *coop_debug, *coop_autotest;
 static cvar_t *coop_role;
+static cvar_t *coop_simLoss, *coop_simLatency, *coop_autotestCount;
 
 coopRole_t	Coop_Role( void )		{ return coop.role; }
 qboolean	Coop_IsLinked( void )	{ return (qboolean)( coop.state == COOP_LINK_ACTIVE ); }
@@ -84,7 +85,9 @@ static void Coop_WriteTest( msg_t *msg ) {
 	for ( int i = 0; i < length; i++ ) {
 		data[i] = Coop_TestByte( i );
 	}
-	coop.testPending = 0;
+	if ( --coop.testRepeats <= 0 ) {
+		coop.testPending = 0;	// otherwise the same payload goes out again in the next packet (loss test)
+	}
 	Com_Printf( "COOP: test payload %d bytes sent\n", length );
 }
 
@@ -124,6 +127,7 @@ static void Coop_LinkUp( netadr_t from ) {
 	Coop_AddReliable( va( "hello \"%s\"", coop_name->string ) );
 	if ( coop_autotest->integer > 0 ) {
 		coop.testPending = Coop_TestClamp( coop_autotest->integer );
+		coop.testRepeats = coop_autotestCount->integer < 1 ? 1 : coop_autotestCount->integer;
 	}
 	Coop_OnLinkUp();
 }
@@ -219,6 +223,7 @@ static void Coop_SendTest_f( void ) {
 		return;
 	}
 	coop.testPending = Coop_TestClamp( atoi( Cmd_Argv( 1 ) ) );
+	coop.testRepeats = 1;
 }
 
 // ---------------------------------------------------------------- packets
@@ -340,6 +345,7 @@ void Coop_ReceivePackets( void ) {
 		return;	// a nested Com_EventLoop (cgame loading screen, cl_cgame.cpp:863) must not overwrite buf mid-parse
 	}
 	CoopReceiveGuard guard( receiving );
+	NET_IP_FlushSimulated();
 	netadr_t	from;
 	msg_t		msg;
 	MSG_Init( &msg, buf, sizeof( buf ) );
@@ -377,6 +383,8 @@ static void Coop_SendPacket( void ) {
 }
 
 void Coop_Frame( void ) {
+	NET_IP_SetSimulation( coop_simLoss->integer, coop_simLatency->integer );
+	NET_IP_FlushSimulated();
 	const int now = Sys_Milliseconds();
 	if ( coop.state == COOP_LINK_CONNECTING ) {
 		if ( now - coop.connectStart > COOP_CONNECT_TIMEOUT_MS ) {
@@ -409,6 +417,9 @@ void Coop_Init( void ) {
 	coop_timeout	= Cvar_Get( "coop_timeout", "20", 0 );
 	coop_debug		= Cvar_Get( "coop_debug", "0", 0 );
 	coop_autotest	= Cvar_Get( "coop_autotest", "0", 0 );	// >0: send a coop_test payload of that size on link up
+	coop_autotestCount	= Cvar_Get( "coop_autotestCount", "1", 0 );	// packets in a row that carry the coop_autotest payload
+	coop_simLoss		= Cvar_Get( "coop_simLoss", "0", 0 );		// % of outgoing coop UDP packets dropped (testing)
+	coop_simLatency		= Cvar_Get( "coop_simLatency", "0", 0 );	// ms added to outgoing coop UDP packets (testing)
 	coop_role		= Cvar_Get( "coop_role", "0", CVAR_ROM );
 	Cmd_AddCommand( "coop_host", Coop_Host_f );
 	Cmd_AddCommand( "coop_connect", Coop_Connect_f );

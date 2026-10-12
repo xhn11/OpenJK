@@ -30,6 +30,7 @@ typedef struct {
 	char			peerName[64];
 	coopReliable_t	rel;
 	int				testPending;		// bytes of a coop_test payload to send in the next packet
+	int				testRepeats;		// how many more packets carry the coop_test payload
 } coopLink_t;
 
 extern coopLink_t	coop;

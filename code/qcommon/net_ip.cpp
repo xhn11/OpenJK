@@ -1,5 +1,6 @@
 #include "q_shared.h"
 #include "qcommon.h"
+#include "../coop/coop_netsim.h"
 
 #ifdef _WIN32
 #	include <winsock2.h>
@@ -27,6 +28,9 @@
 
 static SOCKET	ip_socket = INVALID_SOCKET;
 static int		ip_port = 0;
+static coopNetSim_t	ip_sim;				// coop_simLoss / coop_simLatency (testing only)
+static int			ip_simLoss, ip_simLatency;
+static_assert( sizeof( netadr_t ) <= COOP_SIM_ADDR_BYTES, "coopSimPacket_t::addr too small" );
 
 static qboolean NET_IP_Startup( void ) {
 #ifdef _WIN32
@@ -106,6 +110,7 @@ void NET_IP_Close( void ) {
 		ip_socket = INVALID_SOCKET;
 	}
 	ip_port = 0;
+	CoopSim_Init( &ip_sim, 1 );	// delayed packets belong to the closed socket
 }
 
 int NET_IP_LocalPort( void ) {
@@ -153,20 +158,48 @@ qboolean NET_IP_GetPacket( netadr_t *from, msg_t *msg ) {
 	return qfalse;
 }
 
-void Sys_SendPacket( int length, const void *data, netadr_t to ) {
-	if ( ip_socket == INVALID_SOCKET || to.type != NA_IP ) {
-		return;
-	}
+static void NET_IP_SendNow( int length, const void *data, const netadr_t *to ) {
 	struct sockaddr_in addr;
 	memset( &addr, 0, sizeof( addr ) );
 	addr.sin_family = AF_INET;
-	memcpy( &addr.sin_addr, to.ip, 4 );
-	addr.sin_port = to.port;
+	memcpy( &addr.sin_addr, to->ip, 4 );
+	addr.sin_port = to->port;
 	if ( sendto( ip_socket, (const char *)data, length, 0, (struct sockaddr *)&addr, sizeof( addr ) ) == SOCKET_ERROR ) {
 		const int err = SOCK_LAST_ERROR;
 		if ( err != SOCK_WOULDBLOCK ) {
 			Com_Printf( "Sys_SendPacket: error %d\n", err );
 		}
+	}
+}
+
+void NET_IP_SetSimulation( int lossPercent, int latencyMs ) {
+	ip_simLoss = lossPercent < 0 ? 0 : ( lossPercent > 100 ? 100 : lossPercent );
+	ip_simLatency = latencyMs < 0 ? 0 : ( latencyMs > 1000 ? 1000 : latencyMs );
+}
+
+void Sys_SendPacket( int length, const void *data, netadr_t to ) {
+	if ( ip_socket == INVALID_SOCKET || to.type != NA_IP ) {
+		return;
+	}
+	if ( ip_simLoss > 0 && CoopSim_Drop( &ip_sim, ip_simLoss ) ) {
+		return;
+	}
+	if ( ip_simLatency > 0 && CoopSim_Push( &ip_sim, Sys_Milliseconds() + ip_simLatency, data, length, &to, (int)sizeof( to ) ) ) {
+		return;	// NET_IP_FlushSimulated sends it when it is due
+	}
+	NET_IP_SendNow( length, data, &to );
+}
+
+void NET_IP_FlushSimulated( void ) {
+	const int now = Sys_Milliseconds();
+	const coopSimPacket_t *p;
+	while ( ( p = CoopSim_Due( &ip_sim, now ) ) != nullptr ) {
+		if ( ip_socket != INVALID_SOCKET ) {
+			netadr_t to;
+			memcpy( &to, p->addr, sizeof( to ) );
+			NET_IP_SendNow( p->length, p->data, &to );
+		}
+		CoopSim_Pop( &ip_sim );
 	}
 }
 

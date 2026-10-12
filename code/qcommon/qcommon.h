@@ -154,6 +154,8 @@ qboolean	NET_IP_Open( int port );
 void		NET_IP_Close( void );
 int			NET_IP_LocalPort( void );
 qboolean	NET_IP_GetPacket( netadr_t *from, msg_t *msg );
+void		NET_IP_SetSimulation( int lossPercent, int latencyMs );	// coop testing: drop / delay outgoing NA_IP packets
+void		NET_IP_FlushSimulated( void );							// sends delayed packets that are due
 
 
 #define	MAX_MSGLEN				(1*17408)		// max length of a message, which may
