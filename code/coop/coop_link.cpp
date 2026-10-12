@@ -32,17 +32,23 @@ static void Coop_CloseLink( const char *reason, qboolean notifyPeer ) {
 	}
 }
 
-void Coop_AddReliable( const char *cmd ) {
+qboolean Coop_AddReliable( const char *cmd ) {
 	if ( coop.state != COOP_LINK_ACTIVE ) {
-		return;
+		return qfalse;
 	}
 	if ( (int)strlen( cmd ) > COOP_MAX_WIRE_CMD_LEN ) {
 		Com_Printf( "COOP: reliable command too long (%d chars), dropped\n", (int)strlen( cmd ) );
-		return;
+		return qfalse;
 	}
 	if ( !CoopRel_Add( &coop.rel, cmd ) ) {
 		Coop_CloseLink( "reliable command overflow", qtrue );
+		return qfalse;
 	}
+	return qtrue;
+}
+
+int Coop_ReliableFree( void ) {
+	return coop.state == COOP_LINK_ACTIVE ? CoopRel_FreeSlots( &coop.rel ) : 0;
 }
 
 // ---------------------------------------------------------------- fragmentation self-test
@@ -64,7 +70,7 @@ static unsigned Coop_TestMix( unsigned sum, byte b ) {
 // coop_test: long length, long checksum, length bytes of a fixed pattern
 static void Coop_WriteTest( msg_t *msg ) {
 	const int length = coop.testPending;
-	if ( !length || msg->cursize + 9 + length + 1 > msg->maxsize ) {
+	if ( !length || Coop_MsgRoom( msg ) < 9 + length ) {
 		return;	// nothing to send, or no room next to the reliables: try the next packet
 	}
 	unsigned sum = 5381;
@@ -319,9 +325,21 @@ static void Coop_PacketEvent( netadr_t from, msg_t *msg ) {
 	Coop_ParsePacket( msg );
 }
 
+// sets the flag for its lifetime and clears it also when Com_Error unwinds through the parser
+struct CoopReceiveGuard {
+	qboolean &flag;
+	explicit CoopReceiveGuard( qboolean &f ) : flag( f ) { flag = qtrue; }
+	~CoopReceiveGuard() { flag = qfalse; }
+};
+
 // called from Com_EventLoop; reassembled messages can exceed the engine's MAX_MSGLEN event buffer
 void Coop_ReceivePackets( void ) {
-	static byte	buf[COOP_MAX_MSGLEN];
+	static byte		buf[COOP_MAX_MSGLEN];
+	static qboolean	receiving;
+	if ( receiving ) {
+		return;	// a nested Com_EventLoop (cgame loading screen, cl_cgame.cpp:863) must not overwrite buf mid-parse
+	}
+	CoopReceiveGuard guard( receiving );
 	netadr_t	from;
 	msg_t		msg;
 	MSG_Init( &msg, buf, sizeof( buf ) );
@@ -334,6 +352,7 @@ static void Coop_SendPacket( void ) {
 	static byte buf[COOP_MAX_MSGLEN];
 	msg_t msg;
 	MSG_Init( &msg, buf, COOP_MAX_PAYLOAD );	// the largest message the coop netchan can deliver
+	msg.allowoverflow = qtrue;					// an overflow sets msg.overflowed instead of ERR_FATAL (msg.cpp:74-84)
 	MSG_WriteLong( &msg, coop.rel.inSequence );
 	const int pending = CoopRel_PendingCount( &coop.rel );
 	for ( int i = 0; i < pending; i++ ) {
@@ -347,10 +366,14 @@ static void Coop_SendPacket( void ) {
 		MSG_WriteString( &msg, cmd );
 	}
 	Coop_WriteTest( &msg );
-	Coop_WritePayload( &msg );	// must leave 1 byte for coop_eof
+	Coop_WritePayload( &msg );	// writers stay within Coop_MsgRoom, leaving COOP_MSG_TAIL bytes
 	MSG_WriteByte( &msg, coop_eof );
-	CoopNetchan_Transmit( &coop.chan, msg.cursize, msg.data );
 	coop.lastSent = Sys_Milliseconds();
+	if ( msg.overflowed ) {
+		Com_Printf( "COOP: outgoing packet overflowed (%d bytes), dropped\n", msg.cursize );
+		return;
+	}
+	CoopNetchan_Transmit( &coop.chan, msg.cursize, msg.data );
 }
 
 void Coop_Frame( void ) {

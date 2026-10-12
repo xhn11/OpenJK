@@ -1,14 +1,18 @@
 # Headless smoke test: starts a host (and a guest unless -NoGuest), waits, kills them and checks
-# their qconsole.log for the -ExpectHost / -ExpectGuest regex patterns.
+# their qconsole.log: every -ExpectHost / -ExpectGuest regex must match, no -RejectHost / -RejectGuest
+# regex may match. -HostAfterMap: host commands that run after "+devmap <Map>" (the load is synchronous).
 # Several patterns need -Command, because -File passes an array as one string:
 #   powershell -ExecutionPolicy Bypass -Command "& 'scripts/coop/run-pair.ps1' -ExpectHost 'a','b'"
 param(
   [string]$Map = "kejim_post",
   [int]$Seconds = 25,
   [string[]]$HostArgs = @(),
+  [string[]]$HostAfterMap = @(),
   [string[]]$GuestArgs = @(),
   [string[]]$ExpectHost = @(),
   [string[]]$ExpectGuest = @(),
+  [string[]]$RejectHost = @(),
+  [string[]]$RejectGuest = @(),
   [switch]$NoGuest,
   [switch]$Visible
 )
@@ -34,7 +38,7 @@ function Start-Instance([string]$name, [int]$slot, [string[]]$extra) {
 $procs = @{}
 $failed = $false
 try {
-  $procs.host = Start-Instance "host" 0 (@("+set coop_name HostBot") + $HostArgs + @("+devmap $Map"))
+  $procs.host = Start-Instance "host" 0 (@("+set coop_name HostBot") + $HostArgs + @("+devmap $Map") + $HostAfterMap)
   if (-not $NoGuest) {
     Start-Sleep -Seconds 3
     $procs.guest = Start-Instance "guest" 1 (@("+set coop_name GuestBot") + $GuestArgs)
@@ -51,7 +55,7 @@ try {
   }
 }
 
-function Test-Log([string]$name, [string[]]$patterns) {
+function Test-Log([string]$name, [string[]]$patterns, [string[]]$rejects) {
   $log = Get-ChildItem -Recurse -Filter qconsole.log "$work\$name" -ErrorAction SilentlyContinue | Select-Object -First 1
   if (-not $log) { if ($patterns.Count) { Write-Host "[FAIL] ${name}: no qconsole.log"; return $false }; return $true }
   $text = Get-Content $log.FullName -Raw
@@ -61,8 +65,11 @@ function Test-Log([string]$name, [string[]]$patterns) {
   foreach ($p in $patterns) {
     if ($text -match $p) { Write-Host "[PASS] $name ~ $p" } else { Write-Host "[FAIL] $name missing: $p"; $ok = $false }
   }
+  foreach ($p in $rejects) {
+    if ($text -match $p) { Write-Host "[FAIL] $name contains: $p"; $ok = $false } else { Write-Host "[PASS] $name !~ $p" }
+  }
   return $ok
 }
-if (-not (Test-Log "host" $ExpectHost)) { $failed = $true }
-if (-not $NoGuest -and -not (Test-Log "guest" $ExpectGuest)) { $failed = $true }
+if (-not (Test-Log "host" $ExpectHost $RejectHost)) { $failed = $true }
+if (-not $NoGuest -and -not (Test-Log "guest" $ExpectGuest $RejectGuest)) { $failed = $true }
 if ($failed) { exit 1 } else { Write-Host "SMOKE PASS"; exit 0 }

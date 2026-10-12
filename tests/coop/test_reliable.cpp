@@ -52,3 +52,13 @@ COOP_TEST( rel_rejects_too_long_command ) {
 	CHECK( !CoopRel_Add( r.get(), longCmd.c_str() ) );
 	CHECK_EQ( CoopRel_PendingCount( r.get() ), 0 );
 }
+
+COOP_TEST( rel_free_slots_track_pending ) {
+	auto r = NewRel();
+	CHECK_EQ( CoopRel_FreeSlots( r.get() ), COOP_MAX_RELIABLE );
+	CoopRel_Add( r.get(), "a" );
+	CoopRel_Add( r.get(), "b" );
+	CHECK_EQ( CoopRel_FreeSlots( r.get() ), COOP_MAX_RELIABLE - 2 );
+	CoopRel_Ack( r.get(), 2 );
+	CHECK_EQ( CoopRel_FreeSlots( r.get() ), COOP_MAX_RELIABLE );
+}

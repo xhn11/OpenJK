@@ -15,3 +15,4 @@ void		CoopRel_Ack( coopReliable_t *r, int ack );
 int			CoopRel_PendingCount( const coopReliable_t *r );
 const char	*CoopRel_Pending( const coopReliable_t *r, int index, int *seq );
 bool		CoopRel_Accept( coopReliable_t *r, int seq );
+int			CoopRel_FreeSlots( const coopReliable_t *r );		// how many more commands CoopRel_Add accepts

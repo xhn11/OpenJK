@@ -10,4 +10,5 @@ void		Coop_Frame( void );								// call once per frame after SV_Frame
 void		Coop_ReceivePackets( void );					// drains the coop UDP socket, called from Com_EventLoop
 qboolean	Coop_IsLinked( void );							// ACTIVE
 coopRole_t	Coop_Role( void );
-void		Coop_AddReliable( const char *cmd );			// disconnects on overflow
+qboolean	Coop_AddReliable( const char *cmd );			// qfalse: not linked, too long (dropped) or the queue overflowed (link closed)
+int			Coop_ReliableFree( void );						// free slots in the outgoing reliable queue, 0 when not linked

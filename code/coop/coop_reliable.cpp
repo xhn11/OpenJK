@@ -43,3 +43,7 @@ bool CoopRel_Accept( coopReliable_t *r, int seq ) {
 	r->inSequence = seq;
 	return true;
 }
+
+int CoopRel_FreeSlots( const coopReliable_t *r ) {
+	return COOP_MAX_RELIABLE - ( r->outSequence - r->outAcknowledged );
+}
