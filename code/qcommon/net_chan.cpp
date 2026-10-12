@@ -23,6 +23,7 @@ along with this program; if not, see <http://www.gnu.org/licenses/>.
 
 #include "q_shared.h"
 #include "qcommon.h"
+#include "../coop/coop_adr.h"
 
 /*
 
@@ -394,6 +395,9 @@ qboolean	NET_CompareBaseAdr (netadr_t a, netadr_t b)
 	if (a.type == NA_LOOPBACK)
 		return qtrue;
 
+	if ( a.type == NA_IP )
+		return (qboolean)( a.ipi == b.ipi );
+
 	Com_Printf ("NET_CompareBaseAdr: bad address type\n");
 	return qfalse;
 }
@@ -404,6 +408,12 @@ const char	*NET_AdrToString (netadr_t a)
 
 	if (a.type == NA_LOOPBACK) {
 		Com_sprintf (s, sizeof(s), "loopback");
+	}
+	else if ( a.type == NA_IP ) {
+		Com_sprintf( s, sizeof( s ), "%i.%i.%i.%i:%i", a.ip[0], a.ip[1], a.ip[2], a.ip[3],
+			(int)(unsigned short)BigShort( (short)a.port ) );
+	} else {
+		Com_sprintf( s, sizeof( s ), "bad" );
 	}
 
 	return s;
@@ -417,6 +427,9 @@ qboolean	NET_CompareAdr (netadr_t a, netadr_t b)
 
 	if (a.type == NA_LOOPBACK)
 		return qtrue;
+
+	if ( a.type == NA_IP )
+		return (qboolean)( a.ipi == b.ipi && a.port == b.port );
 
 	Com_Printf ("NET_CompareAdr: bad address type\n");
 	return qfalse;
@@ -543,6 +556,10 @@ void NET_SendPacket( netsrc_t sock, int length, const void *data, netadr_t to ) 
 		NET_SendLoopPacket (sock, length, data, to);
 		return;
 	}
+
+	if ( to.type == NA_IP ) {
+		Sys_SendPacket( length, data, to );
+	}
 }
 
 /*
@@ -580,13 +597,17 @@ Traps "localhost" for loopback, passes everything else to system
 =============
 */
 qboolean	NET_StringToAdr( const char *s, netadr_t *a ) {
-	if (!strcmp (s, "localhost")) {
-		memset (a, 0, sizeof(*a));
+	memset( a, 0, sizeof( *a ) );
+	if ( !strcmp( s, "localhost" ) ) {
 		a->type = NA_LOOPBACK;
 		return qtrue;
 	}
-
-	a->type = NA_BAD;
-	return qfalse;
+	char host[256];
+	int port;
+	if ( !CoopAdr_SplitHostPort( s, host, sizeof( host ), &port ) || !Sys_StringToAdr( host, a ) ) {
+		a->type = NA_BAD;
+		return qfalse;
+	}
+	a->port = port ? BigShort( (short)port ) : 0;
+	return qtrue;
 }
-

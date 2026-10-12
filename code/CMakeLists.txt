@@ -33,7 +33,7 @@ add_subdirectory("${SPDir}/rd-vanilla")
 if(BuildSPEngine OR BuildJK2SPEngine)
 	# Libraries
 	if(WIN32)
-		set(SPEngineLibraries "winmm")
+		set(SPEngineLibraries "winmm" "ws2_32")
 	endif(WIN32)
 	# Defines
 	set(SPEngineDefines ${SharedDefines} "_JK2EXE") # it's called JK2EXE but it really just means Singleplayer Exe
@@ -167,6 +167,8 @@ if(BuildSPEngine OR BuildJK2SPEngine)
 		"${SPDir}/qcommon/md4.cpp"
 		"${SPDir}/qcommon/msg.cpp"
 		"${SPDir}/qcommon/net_chan.cpp"
+		"${SPDir}/qcommon/net_ip.cpp"
+		"${SPDir}/coop/coop_adr.cpp"
 
 		"${SPDir}/qcommon/q_shared.cpp"
 		"${SPDir}/qcommon/q_shared.h"

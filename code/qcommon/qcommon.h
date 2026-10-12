@@ -150,6 +150,10 @@ void		Sys_SendPacket( int length, const void *data, netadr_t to );
 qboolean	Sys_StringToAdr( const char *s, netadr_t *a );
 qboolean	Sys_IsLANAddress (netadr_t adr);
 void		Sys_ShowIP(void);
+qboolean	NET_IP_Open( int port );
+void		NET_IP_Close( void );
+int			NET_IP_LocalPort( void );
+qboolean	NET_IP_GetPacket( netadr_t *from, msg_t *msg );
 
 
 #define	MAX_MSGLEN				(1*17408)		// max length of a message, which may
