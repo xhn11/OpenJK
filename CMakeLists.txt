@@ -52,6 +52,7 @@ option(BuildJK2SPGame "Whether to create projects for the jk2 sp gamecode mod (j
 option(BuildJK2SPRdVanilla "Whether to create projects for the jk2 sp renderer (rdjosp-vanilla_x86.dll)" OFF)
 
 option(BuildTests "Whether to build automatic unit tests (requires Boost)" OFF)
+option(BuildCoopTests "Build JK2 coop unit tests (no external dependencies)" OFF)
 option(UseAddressSanitizer "Whether to enable runtime address sanitizer" OFF)
 option(UseUndefinedSanitizer "Whether to enable runtime Undefined Behavior sanitizer" OFF)
 
@@ -426,4 +427,9 @@ endif()
 if(BuildTests)
 	enable_testing()
 	add_subdirectory("tests")
+endif()
+
+if(BuildCoopTests)
+	enable_testing()
+	add_subdirectory(tests/coop)
 endif()
