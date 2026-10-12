@@ -5,9 +5,11 @@ param(
   [string[]]$GuestArgs = @(),
   [string[]]$ExpectHost = @(),
   [string[]]$ExpectGuest = @(),
-  [switch]$NoGuest
+  [switch]$NoGuest,
+  [switch]$Visible
 )
 $ErrorActionPreference = "Stop"
+. "$PSScriptRoot\layout.ps1"
 $root = Resolve-Path "$PSScriptRoot\..\.."
 $bin  = Join-Path $root "install\JediOutcast"
 $exe  = Join-Path $bin "openjo_sp.x86_64.exe"
@@ -16,16 +18,17 @@ $work = Join-Path $root "build\coop-smoke"
 Remove-Item -Recurse -Force $work -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force "$work\host", "$work\guest" | Out-Null
 
-function Start-Instance([string]$name, [string[]]$extra) {
-  $argLine = "+set fs_basepath `"$base`" +set fs_homepath `"$work\$name`" +set r_fullscreen 0 +set r_mode 3 +set logfile 2 " + ($extra -join " ")
+function Start-Instance([string]$name, [int]$slot, [string[]]$extra) {
+  $display = if ($Visible) { Get-WindowArgs $slot } else { Get-HeadlessArgs }
+  $argLine = "+set fs_basepath `"$base`" +set fs_homepath `"$work\$name`" +set logfile 2 " + $display + " " + ($extra -join " ")
   Start-Process -FilePath $exe -ArgumentList $argLine -WorkingDirectory $bin -PassThru
 }
 
 $procs = @{}
-$procs.host = Start-Instance "host" (@("+set coop_name HostBot") + $HostArgs + @("+devmap $Map"))
+$procs.host = Start-Instance "host" 0 (@("+set coop_name HostBot") + $HostArgs + @("+devmap $Map"))
 if (-not $NoGuest) {
   Start-Sleep -Seconds 3
-  $procs.guest = Start-Instance "guest" (@("+set coop_name GuestBot") + $GuestArgs)
+  $procs.guest = Start-Instance "guest" 1 (@("+set coop_name GuestBot") + $GuestArgs)
 }
 Start-Sleep -Seconds $Seconds
 

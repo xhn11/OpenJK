@@ -49,6 +49,9 @@ cvar_t	*r_noborder;
 cvar_t	*r_centerWindow;
 cvar_t	*r_customwidth;
 cvar_t	*r_customheight;
+cvar_t	*vid_hidden;
+cvar_t	*vid_xpos;
+cvar_t	*vid_ypos;
 cvar_t	*r_swapInterval;
 cvar_t	*r_stereo;
 cvar_t	*r_mode;
@@ -322,7 +325,7 @@ static rserr_t GLimp_SetMode(glconfig_t *glConfig, const windowDesc_t *windowDes
 	int samples;
 	int i = 0;
 	SDL_Surface *icon = NULL;
-	Uint32 flags = SDL_WINDOW_SHOWN;
+	Uint32 flags = vid_hidden->integer ? SDL_WINDOW_HIDDEN : SDL_WINDOW_SHOWN;
 	SDL_DisplayMode desktopMode;
 	int display = 0;
 	int x = SDL_WINDOWPOS_UNDEFINED, y = SDL_WINDOWPOS_UNDEFINED;
@@ -402,6 +405,11 @@ static rserr_t GLimp_SetMode(glconfig_t *glConfig, const windowDesc_t *windowDes
 	{
 		x = ( desktopMode.w / 2 ) - ( glConfig->vidWidth / 2 );
 		y = ( desktopMode.h / 2 ) - ( glConfig->vidHeight / 2 );
+	}
+	else if( !fullscreen && vid_xpos->integer >= 0 && vid_ypos->integer >= 0 )
+	{
+		x = vid_xpos->integer;
+		y = vid_ypos->integer;
 	}
 
 	// Destroy existing state if it exists
@@ -741,6 +749,9 @@ window_t WIN_Init( const windowDesc_t *windowDesc, glconfig_t *glConfig )
 	r_centerWindow		= Cvar_Get( "r_centerWindow",		"0",		CVAR_ARCHIVE|CVAR_LATCH );
 	r_customwidth		= Cvar_Get( "r_customwidth",		"1600",		CVAR_ARCHIVE|CVAR_LATCH );
 	r_customheight		= Cvar_Get( "r_customheight",		"1024",		CVAR_ARCHIVE|CVAR_LATCH );
+	vid_hidden			= Cvar_Get( "vid_hidden",			"0",		0 );
+	vid_xpos			= Cvar_Get( "vid_xpos",				"-1",		0 );
+	vid_ypos			= Cvar_Get( "vid_ypos",				"-1",		0 );
 	r_swapInterval		= Cvar_Get( "r_swapInterval",		"0",		CVAR_ARCHIVE_ND );
 	r_stereo			= Cvar_Get( "r_stereo",				"0",		CVAR_ARCHIVE_ND|CVAR_LATCH );
 	r_mode				= Cvar_Get( "r_mode",				"4",		CVAR_ARCHIVE|CVAR_LATCH );
