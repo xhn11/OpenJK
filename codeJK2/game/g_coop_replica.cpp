@@ -4,6 +4,10 @@
 #include "g_functions.h"
 #include "g_coop.h"
 
+extern gNPC_t	*New_NPC_t( void );
+extern void		G_CreateG2AttachedWeaponModel( gentity_t *ent, const char *weaponModel );
+extern int		WP_SetSaberModel( gclient_t *client, class_t npcClass );
+
 // Replicas: entities another machine simulates. The engine (code/coop/coop_snapshot.cpp) calls these
 // game exports with the owner's state; the game rebuilds what the engine cannot see.
 
@@ -73,7 +77,71 @@ static gentity_t *G_CoopSpawnReplica( int num, const coopEntExtra_t *ex ) {
 		return NULL;
 	}
 	ent->classname = G_NewString( ex->classname );
+	if ( !ex->hasClient ) {
+		return ent;
+	}
+	// an NPC: built like NPC_Spawn_Go does (NPC_spawn.cpp:1191-1266), without spawner, AI or scripts
+	ent->client = (gclient_t *)G_Alloc( sizeof( gclient_t ) );
+	ent->NPC = New_NPC_t();
+	if ( !ent->client || !ent->NPC ) {
+		G_FreeEntity( ent );
+		return NULL;
+	}
+	memset( ent->client, 0, sizeof( *ent->client ) );
+	ent->NPC_type = G_NewString( ex->npcType[0] ? ex->npcType : "stormtrooper" );
+	ent->svFlags |= SVF_NPC;
+	ent->s.eType = ET_PLAYER;
+	if ( !NPC_ParseParms( ent->NPC_type, ent ) ) {
+		gi.Printf( "COOP: cannot build NPC %s for entity %d\n", ent->NPC_type, num );
+		G_FreeEntity( ent );
+		return NULL;
+	}
+	gi.Printf( "COOP: replica npc %d (%s)\n", num, ent->NPC_type );
 	return ent;
+}
+
+// Ghoul2 animations are set by the game (PM_SetAnimFinal), not by copying numbers: restart what changed
+static void G_CoopReplicaAnims( gentity_t *ent, int oldLegs, int oldTorso ) {
+	playerState_t *ps = &ent->client->ps;
+	const int legs = ps->legsAnim, torso = ps->torsoAnim;
+	const int legsTimer = ps->legsAnimTimer, torsoTimer = ps->torsoAnimTimer;
+	if ( legs != oldLegs ) {
+		ps->legsAnim = oldLegs;
+		ps->legsAnimTimer = 0;
+		NPC_SetAnim( ent, SETANIM_LEGS, legs, SETANIM_FLAG_OVERRIDE );
+	}
+	if ( torso != oldTorso ) {
+		ps->torsoAnim = oldTorso;
+		ps->torsoAnimTimer = 0;
+		NPC_SetAnim( ent, SETANIM_TORSO, torso, SETANIM_FLAG_OVERRIDE );
+	}
+	ps->legsAnim = legs;		// the host's values win over what NPC_SetAnim computed
+	ps->torsoAnim = torso;
+	ps->legsAnimTimer = legsTimer;
+	ps->torsoAnimTimer = torsoTimer;
+}
+
+// the weapon in the hand is a Ghoul2 model bolted to the NPC (NPC_combat.cpp:820-838)
+static void G_CoopReplicaWeaponModel( gentity_t *ent, int oldWeapon ) {
+	const int weapon = ent->client->ps.weapon;
+	if ( weapon == oldWeapon ) {
+		return;
+	}
+	if ( ent->weaponModel >= 0 && ent->weaponModel != ent->playerModel ) {
+		gi.G2API_RemoveGhoul2Model( ent->ghoul2, ent->weaponModel );
+	}
+	ent->weaponModel = -1;
+	if ( weapon <= WP_NONE || weapon >= WP_NUM_WEAPONS || ent->playerModel < 0 ) {
+		return;
+	}
+	if ( weapon == WP_SABER ) {
+		if ( !ent->client->ps.saberModel ) {
+			WP_SetSaberModel( ent->client, ent->client->NPC_class );
+		}
+		G_CreateG2AttachedWeaponModel( ent, ent->client->ps.saberModel );
+	} else if ( weaponData[weapon].weaponMdl[0] ) {
+		G_CreateG2AttachedWeaponModel( ent, weaponData[weapon].weaponMdl );
+	}
 }
 
 void G_Coop_ApplyEntity( int entNum, const entityState_t *es, const playerState_t *ps, const coopEntExtra_t *ex ) {
@@ -91,15 +159,17 @@ void G_Coop_ApplyEntity( int entNum, const entityState_t *es, const playerState_
 		gi.Printf( "COOP: entity %d mismatch (%s -> %s)\n", entNum, ent->classname, ex->classname );
 		G_FreeEntity( ent );
 	}
-	if ( ex->hasClient && !ent->inuse ) {
-		return;		// NPC replicas are built from Task 12 on
-	}
+	qboolean fresh = qfalse;
 	if ( !ent->inuse ) {
 		ent = G_CoopSpawnReplica( entNum, ex );
 		if ( !ent ) {
 			return;
 		}
+		fresh = qtrue;
 	}
+	const int oldWeapon = ( ent->client && !fresh ) ? ent->client->ps.weapon : WP_NONE;
+	const int oldLegs = ( ent->client && !fresh ) ? ent->client->ps.legsAnim : -1;		// -1: no animation yet, set it
+	const int oldTorso = ( ent->client && !fresh ) ? ent->client->ps.torsoAnim : -1;
 	ent->s = *es;
 	ent->s.number = entNum;
 	if ( ent->client && ps ) {
@@ -128,6 +198,10 @@ void G_Coop_ApplyEntity( int entNum, const entityState_t *es, const playerState_
 		gi.linkentity( ent );
 	} else if ( ent->linked ) {
 		gi.unlinkentity( ent );
+	}
+	if ( ent->client ) {
+		G_CoopReplicaAnims( ent, oldLegs, oldTorso );
+		G_CoopReplicaWeaponModel( ent, oldWeapon );
 	}
 }
 
