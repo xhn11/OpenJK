@@ -886,9 +886,7 @@ int Com_EventLoop( void ) {
 				}
 			}
 
-			while ( NET_IP_GetPacket( &evFrom, &buf ) ) {
-				Coop_PacketEvent( evFrom, &buf );
-			}
+			Coop_ReceivePackets();
 
 			return ev.evTime;
 		}

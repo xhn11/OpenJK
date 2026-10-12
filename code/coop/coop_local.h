@@ -3,12 +3,14 @@
 #include "../server/server.h"
 #include "coop_public.h"
 #include "coop_reliable.h"
+#include "coop_netchan.h"
 
-#define COOP_PROTOCOL_VERSION		1
+#define COOP_PROTOCOL_VERSION		2			// 2: coop netchan (no qport, 1200-byte fragments)
 #define COOP_DEFAULT_PORT			29170
 #define COOP_CONNECT_RESEND_MS		1000
 #define COOP_CONNECT_TIMEOUT_MS		15000
 #define COOP_PACKET_INTERVAL_MS		33
+#define COOP_MIN_TIMEOUT_SEC		5
 // MSG_ReadString stops at MAX_STRING_CHARS-1 chars without consuming the NUL, so 1022 is the longest string that round-trips
 #define COOP_MAX_WIRE_CMD_LEN		( MAX_STRING_CHARS - 2 )
 
@@ -18,9 +20,8 @@ typedef struct {
 	coopRole_t		role;
 	coopLinkState_t	state;
 	netadr_t		peer;
-	netchan_t		chan;
+	coopNetchan_t	chan;
 	int				challenge;
-	int				qport;
 	int				connectStart;
 	int				lastSent;
 	int				lastReceived;

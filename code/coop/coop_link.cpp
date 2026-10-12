@@ -45,8 +45,8 @@ void Coop_AddReliable( const char *cmd ) {
 	}
 }
 
-static void Coop_LinkUp( netadr_t from, int qport ) {
-	Netchan_Setup( coop.role == COOP_ROLE_HOST ? NS_SERVER : NS_CLIENT, &coop.chan, from, qport );
+static void Coop_LinkUp( netadr_t from ) {
+	CoopNetchan_Setup( coop.role == COOP_ROLE_HOST ? NS_SERVER : NS_CLIENT, &coop.chan, from );
 	coop.peer = from;
 	coop.state = COOP_LINK_ACTIVE;
 	coop.lastReceived = Sys_Milliseconds();
@@ -61,6 +61,10 @@ static void Coop_LinkUp( netadr_t from, int qport ) {
 static void Coop_Host_f( void ) {
 	if ( coop.state != COOP_LINK_IDLE ) {
 		Com_Printf( "COOP: already active, use coop_disconnect first\n" );
+		return;
+	}
+	if ( coop_port->integer < 1 || coop_port->integer > 65535 ) {
+		Com_Printf( "COOP: invalid coop_port %d (use 1..65535)\n", coop_port->integer );
 		return;
 	}
 	if ( !NET_IP_Open( coop_port->integer ) ) {
@@ -86,6 +90,10 @@ static void Coop_Connect_f( void ) {
 		return;
 	}
 	if ( !adr.port ) {
+		if ( coop_port->integer < 1 || coop_port->integer > 65535 ) {
+			Com_Printf( "COOP: invalid coop_port %d (use 1..65535)\n", coop_port->integer );
+			return;
+		}
 		adr.port = BigShort( (short)coop_port->integer );
 	}
 	if ( !NET_IP_Open( PORT_ANY ) ) {
@@ -95,7 +103,6 @@ static void Coop_Connect_f( void ) {
 	Coop_Reset( COOP_ROLE_GUEST, COOP_LINK_CONNECTING );
 	coop.peer = adr;
 	coop.challenge = ( ( rand() << 16 ) ^ rand() ^ Sys_Milliseconds() ) & 0x7fffffff;
-	coop.qport = rand() & 0xffff;
 	coop.connectStart = Sys_Milliseconds();
 	Com_Printf( "COOP: connecting to %s\n", NET_AdrToString( adr ) );
 }
@@ -156,7 +163,7 @@ static void Coop_ConnectionlessPacket( netadr_t from, msg_t *msg ) {
 		coop.challenge = challenge;
 		Q_strncpyz( coop.peerName, Cmd_Argv( 3 ), sizeof( coop.peerName ) );
 		NET_OutOfBandPrint( NS_SERVER, from, "coopAccept %d \"%s\"", challenge, coop_name->string );
-		Coop_LinkUp( from, atoi( Cmd_Argv( 4 ) ) );
+		Coop_LinkUp( from );
 		return;
 	}
 
@@ -166,7 +173,7 @@ static void Coop_ConnectionlessPacket( netadr_t from, msg_t *msg ) {
 	if ( coop.state == COOP_LINK_CONNECTING ) {
 		if ( !Q_stricmp( c, "coopAccept" ) && atoi( Cmd_Argv( 1 ) ) == coop.challenge ) {
 			Q_strncpyz( coop.peerName, Cmd_Argv( 2 ), sizeof( coop.peerName ) );
-			Coop_LinkUp( from, coop.qport );
+			Coop_LinkUp( from );
 		} else if ( !Q_stricmp( c, "coopReject" ) ) {
 			Com_Printf( "COOP: rejected: %s\n", Cmd_Argv( 1 ) );
 			NET_IP_Close();
@@ -215,7 +222,7 @@ static void Coop_ParsePacket( msg_t *msg ) {
 	}
 }
 
-void Coop_PacketEvent( netadr_t from, msg_t *msg ) {
+static void Coop_PacketEvent( netadr_t from, msg_t *msg ) {
 	if ( msg->cursize >= 4 && *(int *)msg->data == -1 ) {
 		Coop_ConnectionlessPacket( from, msg );
 		return;
@@ -223,23 +230,34 @@ void Coop_PacketEvent( netadr_t from, msg_t *msg ) {
 	if ( coop.state != COOP_LINK_ACTIVE || !NET_CompareAdr( from, coop.peer ) ) {
 		return;
 	}
-	if ( !Netchan_Process( &coop.chan, msg ) ) {
+	if ( !CoopNetchan_Process( &coop.chan, msg ) ) {
 		return;	// out of order, duplicated or a fragment
 	}
 	coop.lastReceived = Sys_Milliseconds();
 	Coop_ParsePacket( msg );
 }
 
-static void Coop_SendPacket( void ) {
-	static byte buf[MAX_MSGLEN];
-	msg_t msg;
+// called from Com_EventLoop; reassembled messages can exceed the engine's MAX_MSGLEN event buffer
+void Coop_ReceivePackets( void ) {
+	static byte	buf[COOP_MAX_MSGLEN];
+	netadr_t	from;
+	msg_t		msg;
 	MSG_Init( &msg, buf, sizeof( buf ) );
+	while ( NET_IP_GetPacket( &from, &msg ) ) {
+		Coop_PacketEvent( from, &msg );
+	}
+}
+
+static void Coop_SendPacket( void ) {
+	static byte buf[COOP_MAX_MSGLEN];
+	msg_t msg;
+	MSG_Init( &msg, buf, COOP_MAX_PAYLOAD );	// the largest message the coop netchan can deliver
 	MSG_WriteLong( &msg, coop.rel.inSequence );
 	const int pending = CoopRel_PendingCount( &coop.rel );
 	for ( int i = 0; i < pending; i++ ) {
 		int seq;
 		const char *cmd = CoopRel_Pending( &coop.rel, i, &seq );
-		if ( msg.cursize + (int)strlen( cmd ) + 16 > MAX_MSGLEN / 2 ) {
+		if ( msg.cursize + (int)strlen( cmd ) + 16 > msg.maxsize / 2 ) {
 			break;	// the rest goes in a later packet; the peer needs them in order anyway
 		}
 		MSG_WriteByte( &msg, coop_reliable );
@@ -248,7 +266,7 @@ static void Coop_SendPacket( void ) {
 	}
 	Coop_WritePayload( &msg );
 	MSG_WriteByte( &msg, coop_eof );
-	Netchan_Transmit( &coop.chan, msg.cursize, msg.data );
+	CoopNetchan_Transmit( &coop.chan, msg.cursize, msg.data );
 	coop.lastSent = Sys_Milliseconds();
 }
 
@@ -260,8 +278,8 @@ void Coop_Frame( void ) {
 			NET_IP_Close();
 			Coop_Reset( COOP_ROLE_NONE, COOP_LINK_IDLE );
 		} else if ( now - coop.lastSent >= COOP_CONNECT_RESEND_MS ) {
-			NET_OutOfBandPrint( NS_CLIENT, coop.peer, "coopConnect %d %d \"%s\" %d",
-				COOP_PROTOCOL_VERSION, coop.challenge, coop_name->string, coop.qport );
+			NET_OutOfBandPrint( NS_CLIENT, coop.peer, "coopConnect %d %d \"%s\"",
+				COOP_PROTOCOL_VERSION, coop.challenge, coop_name->string );
 			coop.lastSent = now;
 		}
 		return;
@@ -269,7 +287,8 @@ void Coop_Frame( void ) {
 	if ( coop.state != COOP_LINK_ACTIVE ) {
 		return;
 	}
-	if ( now - coop.lastReceived > coop_timeout->integer * 1000 ) {
+	const int timeoutSec = coop_timeout->integer < COOP_MIN_TIMEOUT_SEC ? COOP_MIN_TIMEOUT_SEC : coop_timeout->integer;
+	if ( now - coop.lastReceived > timeoutSec * 1000 ) {
 		Coop_CloseLink( "timed out", qtrue );
 		return;
 	}
