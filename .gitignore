@@ -194,3 +194,7 @@ compile_commands.json
 #############
 [Bb]uild*/
 cmake-build-*
+
+# coop build outputs
+build-ja/
+install/
