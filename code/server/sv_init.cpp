@@ -63,6 +63,7 @@ void SV_SetConfigstring (int index, const char *val) {
 	// change the string in sv
 	Z_Free( sv.configstrings[index] );
 	sv.configstrings[index] = CopyString( val );
+	Coop_ConfigstringChanged( index );	// coop host: the guest gets it (code/coop/coop_cs.cpp)
 
 	// send it to all the clients if we aren't
 	// spawning a new server

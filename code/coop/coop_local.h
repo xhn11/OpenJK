@@ -5,7 +5,7 @@
 #include "coop_reliable.h"
 #include "coop_netchan.h"
 
-#define COOP_PROTOCOL_VERSION		3			// 3: loading/loaded, coop_map/coop_ready
+#define COOP_PROTOCOL_VERSION		4			// 4: coop_cs / coop_csack
 #define COOP_DEFAULT_PORT			29170
 #define COOP_CONNECT_RESEND_MS		1000
 #define COOP_CONNECT_TIMEOUT_MS		15000
@@ -42,7 +42,8 @@ typedef struct {
 extern coopLink_t	coop;
 extern cvar_t		*coop_port, *coop_name, *coop_timeout, *coop_debug, *coop_autotest;
 
-enum { coop_bad, coop_eof, coop_reliable, coop_snapshot /*M3*/, coop_snapack /*M3*/, coop_migrate /*M6*/, coop_test /*debug: fragmentation self-test*/ };
+enum { coop_bad, coop_eof, coop_reliable, coop_snapshot /*Task 11*/, coop_snapack /*Task 11*/, coop_migrate /*M6*/,
+	coop_test /*debug: fragmentation self-test*/, coop_cs, coop_csack };
 
 // Bytes a payload writer may still add to an outgoing packet (COOP_MSG_TAIL stays free for coop_eof).
 static inline int Coop_MsgRoom( const msg_t *msg ) {
@@ -65,3 +66,15 @@ void		Coop_SessionMapLoaded( void );				// Coop_MapLoadFinished
 int			Coop_MapGen( void );						// host: running map's generation; guest: generation from coop_map
 qboolean	Coop_GuestInWorld( void );					// guest: in the host's map, client in game, coop_ready sent
 qboolean	Coop_HostGuestInWorld( void );				// host: the guest confirmed the running map
+void		Coop_SessionMapLoading( void );				// Coop_MapLoadStarting
+
+// coop_cs.cpp
+void		CoopCS_MapLoading( void );					// host: the map's configstrings are rebuilt, versions restart
+void		CoopCS_GuestReady( void );					// host: the guest entered the map, send everything
+void		CoopCS_NewMap( void );						// guest: coop_map arrived, forget the old map's strings
+void		CoopCS_LinkReset( void );
+void		CoopCS_Write( msg_t *msg );					// host: coop_cs, guest: coop_csack
+qboolean	CoopCS_Parse( msg_t *msg );					// guest, inside Com_EventLoop: only stores
+qboolean	CoopCS_ParseAck( msg_t *msg );				// host
+void		CoopCS_Frame( void );						// guest, Coop_Frame: applies stored strings in batches
+qboolean	CoopCS_Synced( void );						// guest: the first full set is applied

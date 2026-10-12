@@ -435,6 +435,7 @@ void Coop_FlushNow( void ) {
 
 void Coop_MapLoadStarting( void ) {
 	coop.localLoading = qtrue;
+	Coop_SessionMapLoading();
 	if ( coop.state != COOP_LINK_ACTIVE ) {
 		return;
 	}

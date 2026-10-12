@@ -14,3 +14,4 @@ qboolean	Coop_AddReliable( const char *cmd );			// qfalse: not linked, too long 
 int			Coop_ReliableFree( void );						// free slots in the outgoing reliable queue, 0 when not linked
 void		Coop_MapLoadStarting( void );					// SV_SpawnServer start: tell the peer, the load blocks all packets
 void		Coop_MapLoadFinished( void );					// SV_SpawnServer end
+void		Coop_ConfigstringChanged( int index );			// SV_SetConfigstring: index got a new value
