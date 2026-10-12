@@ -1394,7 +1394,14 @@ gentity_t *NPC_PickEnemy( gentity_t *closestTo, int enemyTeam, qboolean checkVis
 
 	if( findPlayersFirst )
 	{//try to find a player first
-		newenemy = &g_entities[0];
+		for ( int coopPlayer = 0; coopPlayer < MAX_CLIENTS; coopPlayer++ )
+		{//coop: either player (M7)
+		failed = qfalse;
+		newenemy = &g_entities[coopPlayer];
+		if ( !newenemy->inuse )
+		{
+			continue;
+		}
 		if( newenemy->client && !(newenemy->flags & FL_NOTARGET) && !(newenemy->s.eFlags & EF_NODRAW))
 		{
 			if( newenemy->health > 0 )
@@ -1499,6 +1506,7 @@ gentity_t *NPC_PickEnemy( gentity_t *closestTo, int enemyTeam, qboolean checkVis
 					}
 				}
 			}
+		}
 		}
 	}
 

@@ -1275,6 +1275,12 @@ void G_RunFrame( int levelTime ) {
 	//msec = level.time - level.previousTime;
 
 	NAV_CheckCalcPaths();
+	G_CoopNpcFrame();
+	G_CoopP2Frame();
+	G_CoopLifeFrame();
+	G_CoopAlliesFollow();
+	G_CoopStandInRunFrame();
+	G_CoopClaimFrame();
 	//ResetTeamCounters();
 
 	AI_UpdateGroups();

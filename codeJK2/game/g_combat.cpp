@@ -4796,8 +4796,14 @@ void G_Damage( gentity_t *targ, gentity_t *inflictor, gentity_t *attacker, vec3_
 	vec3_t		newDir;
 	qboolean	alreadyDead = qfalse;
 
+	if ( G_CoopNoFriendlyFire( targ, attacker ) )
+	{//coop: the players do not hurt each other (design 20)
+		return;
+	}
+	G_CoopNpcBeforeDamage( targ, damage );
 	if ( G_CoopBlockDamage( targ ) )
-	{//coop: only the owner of targ applies damage (M5 sends it there as coop_hit)
+	{//coop: only the owner of targ applies damage, we send the hit there (design 7)
+		G_CoopForwardDamage( targ, inflictor, attacker, dir, point, damage, dflags, mod, hitLoc );
 		return;
 	}
 	if (!targ->takedamage) {

@@ -206,7 +206,11 @@ void GEntity_BlockedFunc(gentity_t *self, gentity_t *other)
 void GEntity_TouchFunc(gentity_t *self, gentity_t *other, trace_t *trace)
 {
 	if ( G_CoopBlockTouch( self ) )
-	{//coop guest: host entities react to touches on the host (M5)
+	{//coop guest: host entities react to touches on the host, where the puppet touches them (design 17)
+		return;
+	}
+	if ( other && !G_CoopOwnsEnt( other ) && G_CoopIsPhysicalTrigger( self ) )
+	{//coop: the partner's machine pushes, teleports and hurts its own entities
 		return;
 	}
 //#define TOUCHCASE(blah) case touchF_ ## blah: blah(self,other,trace); OutputDebugString(va("%s\n",#blah));break;
@@ -246,8 +250,12 @@ void GEntity_UseFunc(gentity_t *self, gentity_t *other, gentity_t *activator)
 	{
 		return;
 	}
-	if ( G_CoopBlockUse( self ) )
-	{//coop guest: using host entities goes through the host (M5)
+	if ( G_CoopForwardUse( self, other, activator ) )
+	{//coop guest: using host entities goes through the host (design 18)
+		return;
+	}
+	if ( G_CoopClaimUse( self, activator ) )
+	{//coop host: guns, turrets and cameras belong to who uses them (design 26)
 		return;
 	}
 //#define USECASE(blah) case useF_ ## blah: blah(self,other,activator); OutputDebugString(va("%s\n",#blah));break;

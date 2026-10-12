@@ -2253,6 +2253,56 @@ CG_Draw2D
 =================
 */
 extern void CG_SaberClashFlare( void );
+/*
+=================
+CG_DrawCoopPartner
+
+coop (design 27): the partner's name, health and shield in the corner, the name over its head when
+it is in view, an optional arrow towards it (cg_coopPartnerArrow) when it is not
+=================
+*/
+static void CG_DrawCoopPartner( void )
+{
+	const gentity_t *partner = &g_entities[1];
+	if ( !partner->inuse || !partner->client || partner->s.eType != ET_PLAYER )
+	{
+		return;
+	}
+	char name[64];
+	gi.Cvar_VariableStringBuffer( "coop_peername", name, sizeof( name ) );
+	if ( !name[0] )
+	{
+		Q_strncpyz( name, "Partner", sizeof( name ) );
+	}
+	const int health = partner->health > 0 ? partner->health : 0;
+	const int shield = partner->client->ps.stats[STAT_ARMOR];
+	const char *s = va( "%s  %d / %d", name, health, shield );
+	cgi_R_Font_DrawString( 8, 8, s, health > 0 ? colorTable[CT_LTGOLD1] : colorTable[CT_LTRED1], cgs.media.qhFontSmall, -1, 0.8f );
+
+	vec3_t head;
+	VectorCopy( partner->currentOrigin, head );
+	head[2] += partner->maxs[2] + 8;
+	trace_t tr;
+	cgi_CM_BoxTrace( &tr, cg.refdef.vieworg, head, vec3_origin, vec3_origin, 0, CONTENTS_SOLID );
+	int x, y;
+	const qboolean onScreen = CG_WorldCoordToScreenCoord( head, &x, &y );
+	if ( onScreen && tr.fraction >= 1.0f )
+	{
+		const int w = cgi_R_Font_StrLenPixels( name, cgs.media.qhFontSmall, 0.8f );
+		cgi_R_Font_DrawString( x - w / 2, y - 12, name, colorTable[CT_LTGOLD1], cgs.media.qhFontSmall, -1, 0.8f );
+	}
+	else if ( gi.cvar( "cg_coopPartnerArrow", "0", CVAR_ARCHIVE )->integer )
+	{
+		vec3_t dir, angles;
+		VectorSubtract( partner->currentOrigin, cg.refdef.vieworg, dir );
+		vectoangles( dir, angles );
+		const float yaw = AngleNormalize180( angles[YAW] - cg.refdefViewAngles[YAW] );
+		const char *arrow = yaw > 45 ? "<" : yaw < -45 ? ">" : "^";
+		const int ax = yaw > 45 ? 40 : yaw < -45 ? 600 : 316;
+		cgi_R_Font_DrawString( ax, 240, va( "%s %s", arrow, name ), colorTable[CT_LTGOLD1], cgs.media.qhFontSmall, -1, 0.8f );
+	}
+}
+
 static void CG_Draw2D( void )
 {
 	char	text[1024]={0};
@@ -2336,6 +2386,8 @@ static void CG_Draw2D( void )
 
 
 		CG_DrawCrosshairNames();
+
+		CG_DrawCoopPartner();
 
 		CG_RunRocketLocking();
 

@@ -2053,8 +2053,11 @@ extern cvar_t	*g_skippingcin;
 					G_StopCinematicSkip();
 				}
 				else
-				{// no... so start skipping...
-					G_StartCinematicSkip();
+				{// no... so start skipping... (coop: when both players want it)
+					if ( G_CoopCinematicSkipPressed() )
+					{
+						G_StartCinematicSkip();
+					}
 					return;
 				}
 			}
@@ -2849,7 +2852,10 @@ extern cvar_t	*g_skippingcin;
 			*/
 
 			// pressing attack or use is the normal respawn method
-			if ( ucmd->buttons & ( BUTTON_ATTACK ) )
+			if ( G_CoopRespawnThink( ent ) )
+			{//coop: respawn next to the partner, or the host reloads when both are dead (design 10)
+			}
+			else if ( ucmd->buttons & ( BUTTON_ATTACK ) )
 			{
 				respawn( ent );
 //				gi.SendConsoleCommand( va("disconnect;wait;wait;wait;wait;wait;wait;devmap %s\n",level.mapname) );

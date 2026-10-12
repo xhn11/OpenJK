@@ -90,11 +90,12 @@ void MineMonster_Patrol( void )
 
 	vec3_t dif;
 
-	VectorSubtract( g_entities[0].currentOrigin, NPC->currentOrigin, dif );
+	gentity_t *player = G_ClosestPlayer( NPC->currentOrigin, qfalse );	// coop: either player
+	VectorSubtract( player->currentOrigin, NPC->currentOrigin, dif );
 
 	if ( VectorLengthSquared( dif ) < 256 * 256 )
 	{
-		G_SetEnemy( NPC, &g_entities[0] );
+		G_SetEnemy( NPC, player );
 	}
 
 	if ( NPC_CheckEnemyExt( qtrue ) == qfalse )

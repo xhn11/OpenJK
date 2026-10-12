@@ -497,9 +497,9 @@ NPC_CheckAlertEvents
 
 int G_CheckAlertEvents( gentity_t *self, qboolean checkSight, qboolean checkSound, float maxSeeDist, float maxHearDist, int ignoreAlert, qboolean mustHaveOwner, int minAlertLevel )
 {
-	if ( &g_entities[0] == NULL || g_entities[0].health <= 0 )
+	if ( !G_AnyPlayerAlive() )
 	{
-		//player is dead
+		//player is dead (coop: both)
 		return -1;
 	}
 
@@ -598,6 +598,7 @@ AddSoundEvent
 qboolean RemoveOldestAlert( void );
 void AddSoundEvent( gentity_t *owner, vec3_t position, float radius, alertEventLevel_e alertLevel, qboolean needLOS )
 {
+	G_CoopForwardAlert( AET_SOUND, owner, position, radius, alertLevel, needLOS ? 1.0f : 0.0f );
 	//FIXME: Handle this in another manner?
 	if ( level.numAlertEvents >= MAX_ALERT_EVENTS )
 	{
@@ -645,6 +646,7 @@ AddSightEvent
 
 void AddSightEvent( gentity_t *owner, vec3_t position, float radius, alertEventLevel_e alertLevel, float addLight )
 {
+	G_CoopForwardAlert( AET_SIGHT, owner, position, radius, alertLevel, addLight );
 	//FIXME: Handle this in another manner?
 	if ( level.numAlertEvents >= MAX_ALERT_EVENTS )
 	{

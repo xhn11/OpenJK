@@ -5758,6 +5758,7 @@ static void Q3_CameraGroup( int entID, char *camG)
 	}
 
 	ent->cameraGroup = G_NewString(camG);
+	G_CoopCamGroup( ent, camG );
 }
 
 extern camera_t	client_camera;
@@ -5771,6 +5772,7 @@ Q3_CameraGroupZOfs
 static void Q3_CameraGroupZOfs( float camGZOfs )
 {
 	client_camera.cameraGroupZOfs = camGZOfs;
+	G_CoopCamGroupSettings();
 }
 /*
 ============
@@ -5782,6 +5784,7 @@ Q3_CameraGroup
 static void Q3_CameraGroupTag( char *camGTag )
 {
 	Q_strncpyz( client_camera.cameraGroupTag, camGTag, sizeof(client_camera.cameraGroupTag) );
+	G_CoopCamGroupSettings();
 }
 
 /*
@@ -6526,6 +6529,97 @@ Q3_Set
   Argument		: const char *data
 ============
 */
+// coop: the sets on "kyle" that player 2 gets too (design 26); animations and moves are not mirrored
+static qboolean Q3_CoopMirrored( int toSet )
+{
+	switch ( toSet )
+	{
+	case SET_PLAYER_LOCKED:
+	case SET_LOCK_PLAYER_WEAPONS:
+	case SET_UNDYING:
+	case SET_INVINCIBLE:
+	case SET_FORCE_INVINCIBLE:
+	case SET_NOTARGET:
+	case SET_HEALTH:
+	case SET_ARMOR:
+	case SET_WEAPON:
+	case SET_ITEM:
+	case SET_NO_FORCE:
+	case SET_ORIGIN:
+	case SET_TELEPORT_DEST:
+	case SET_FORCE_HEAL_LEVEL:
+	case SET_FORCE_JUMP_LEVEL:
+	case SET_FORCE_SPEED_LEVEL:
+	case SET_FORCE_PUSH_LEVEL:
+	case SET_FORCE_PULL_LEVEL:
+	case SET_FORCE_MINDTRICK_LEVEL:
+	case SET_FORCE_GRIP_LEVEL:
+	case SET_FORCE_LIGHTNING_LEVEL:
+	case SET_SABER_THROW:
+	case SET_SABER_DEFENSE:
+	case SET_SABER_OFFENSE:
+		return qtrue;
+	default:
+		return qfalse;
+	}
+}
+
+// coop: objectives and mission state are shared, whoever runs the script (design 24)
+static qboolean Q3_CoopGlobalMirrored( int toSet )
+{
+	switch ( toSet )
+	{
+	case SET_OBJECTIVE_SHOW:
+	case SET_OBJECTIVE_HIDE:
+	case SET_OBJECTIVE_SUCCEEDED:
+	case SET_OBJECTIVE_FAILED:
+	case SET_OBJECTIVE_CLEARALL:
+	case SET_MISSIONFAILED:
+	case SET_MISSIONSTATUSTEXT:
+	case SET_MISSIONSTATUSTIME:
+	case SET_MISSION_STATUS_SCREEN:
+	case SET_VIDEO_PLAY:		// design 21: videos play on both machines
+	case SET_VIDEO_FADE_IN:
+	case SET_VIDEO_FADE_OUT:
+		return qtrue;
+	default:
+		return qfalse;
+	}
+}
+
+static qboolean Q3_CoopForceSet( int toSet )
+{
+	return (qboolean)( ( toSet >= SET_FORCE_HEAL_LEVEL && toSet <= SET_FORCE_LIGHTNING_LEVEL )
+		|| toSet == SET_SABER_THROW || toSet == SET_SABER_DEFENSE || toSet == SET_SABER_OFFENSE );
+}
+
+static void Q3_Set( int taskID, int entID, const char *type_name, const char *data );
+
+// coop: a set the host's scripts did on Kyle, applied to our player (g_coop_act.cpp "kset")
+void Q3_CoopMirrorSet( const char *type_name, const char *data )
+{
+	const int toSet = GetIDForString( setTable, type_name );
+	if ( !Q3_CoopMirrored( toSet ) && !Q3_CoopGlobalMirrored( toSet ) )
+	{
+		return;
+	}
+	if ( !G_CoopP2HasForce() && ( Q3_CoopForceSet( toSet )
+		|| ( toSet == SET_WEAPON && !Q_stricmp( data, "WP_SABER" ) ) ) )
+	{//Jan never gets the Force or a saber (design 15)
+		return;
+	}
+	if ( toSet == SET_ORIGIN || toSet == SET_TELEPORT_DEST )
+	{//Kyle was moved: we go next to him
+		vec3_t org;
+		if ( sscanf( data, "%f %f %f", &org[0], &org[1], &org[2] ) == 3 )
+		{
+			G_CoopTeleportNear( &g_entities[0], org );
+		}
+		return;
+	}
+	Q3_Set( -1, 0, type_name, data );
+}
+
 static void Q3_Set( int taskID, int entID, const char *type_name, const char *data )
 {
 	gentity_t	*ent = &g_entities[entID];
@@ -6542,6 +6636,11 @@ static void Q3_Set( int taskID, int entID, const char *type_name, const char *da
 
 	//Set this for callbacks
 	toSet = GetIDForString( setTable, type_name );
+
+	if ( taskID >= 0 && ( ( entID == 0 && Q3_CoopMirrored( toSet ) ) || Q3_CoopGlobalMirrored( toSet ) ) )
+	{//coop: what scripts do to Kyle happens to player 2 as well (design 26)
+		G_CoopSend( "kset \"%s\" \"%s\"", type_name, data );
+	}
 
 	//TODO: Throw in a showscript command that will list each command and what they're doing...
 	//		maybe as simple as printing that line of the script to the console preceeded by the person's name?
@@ -9254,6 +9353,7 @@ void Interface_Init( interface_export_t *pe )
 	pe->I_CameraShake			=	CGCam_Shake;
 	pe->I_CameraFade			=	Q3_CameraFade;
 	pe->I_CameraPath			=	Q3_CameraPath;
+	G_CoopHookCamera( pe );		// coop: the guest plays the host's camera too (design 21)
 
 	//Variable information
 	pe->I_GetFloat				=	Q3_GetFloat;

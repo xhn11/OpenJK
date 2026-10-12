@@ -462,3 +462,55 @@ qboolean TIMER_Start( gentity_t *self, const char *identifier, int duration )
 	}
 	return qfalse;
 }
+
+/*
+-------------------------
+TIMER_Export / TIMER_Import
+
+coop (NPC migration, g_coop_npc.cpp): an entity's timers as "name time name time ...", absolute
+level times (both machines share the clock)
+-------------------------
+*/
+
+int TIMER_Export( int num, char *buf, int size )
+{
+	int len = 0;
+	buf[0] = 0;
+	for ( gtimer_t *p = g_timers[num]; p; p = p->next )
+	{
+		const char *name = p->id.c_str();
+		const int need = strlen( name ) + 16;
+		if ( len + need >= size )
+		{
+			break;
+		}
+		len += Com_sprintf( buf + len, size - len, "%s%s %d", len ? " " : "", name, p->time );
+	}
+	return len;
+}
+
+void TIMER_Import( gentity_t *ent, const char *text )
+{
+	TIMER_Clear( ent );
+	const char *p = text;
+	char name[128];
+	while ( p && *p )
+	{
+		int time = 0, used = 0;
+		if ( sscanf( p, "%127s %d%n", name, &time, &used ) != 2 )
+		{
+			break;
+		}
+		gtimer_t *timer = TIMER_GetNew( ent->s.number, name );
+		if ( timer )
+		{
+			timer->id = name;
+			timer->time = time;
+		}
+		p += used;
+		while ( *p == ' ' )
+		{
+			p++;
+		}
+	}
+}

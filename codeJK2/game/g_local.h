@@ -657,9 +657,13 @@ qboolean	TIMER_Done( gentity_t *ent, const char *identifier );
 qboolean	TIMER_Start( gentity_t *self, const char *identifier, int duration );
 qboolean	TIMER_Done2( gentity_t *ent, const char *identifier, qboolean remove = qfalse );
 qboolean	TIMER_Exists( gentity_t *ent, const char *identifier );
+int			TIMER_Export( int num, char *buf, int size );			// coop NPC migration
+void		TIMER_Import( gentity_t *ent, const char *text );
 void		TIMER_Remove( gentity_t *ent, const char *identifier );
 
 float NPC_GetHFOVPercentage( vec3_t spot, vec3_t from, vec3_t facing, float hFOV );
 float NPC_GetVFOVPercentage( vec3_t spot, vec3_t from, vec3_t facing, float vFOV );
+
+#include "g_coop.h"	// coop: G_IsPlayer and friends are used all over the game
 
 #endif//#ifndef __G_LOCAL_H__

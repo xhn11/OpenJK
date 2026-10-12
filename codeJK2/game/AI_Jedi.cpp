@@ -4585,7 +4585,22 @@ qboolean Jedi_CheckDanger( void )
 }
 
 extern int g_crosshairEntNum;
+static qboolean Jedi_CheckAmbushOne( gentity_t *player );
+
 qboolean Jedi_CheckAmbushPlayer( void )
+{//coop: either player springs the ambush (M7)
+	for ( int i = 0; i < MAX_CLIENTS; i++ )
+	{
+		gentity_t *p = G_PlayerNum( i );
+		if ( p && Jedi_CheckAmbushOne( p ) )
+		{
+			return qtrue;
+		}
+	}
+	return qfalse;
+}
+
+static qboolean Jedi_CheckAmbushOne( gentity_t *player )
 {
 	if ( !player || !player->client )
 	{
@@ -4707,7 +4722,7 @@ static void Jedi_Patrol( void )
 				if ( gi.inPVS( NPC->currentOrigin, enemy->currentOrigin ) )
 				{//we could potentially see him
 					enemy_dist = DistanceSquared( NPC->currentOrigin, enemy->currentOrigin );
-					if ( enemy->s.number == 0 || enemy_dist < best_enemy_dist )
+					if ( G_IsPlayer( enemy ) || enemy_dist < best_enemy_dist )	// coop: either player
 					{
 						//if the enemy is close enough, or threw his saber, take him as the enemy
 						//FIXME: what if he throws a thermal detonator?

@@ -673,7 +673,7 @@ static void WriteGEntities(qboolean qbAutosave)
 	{
 		gentity_t* ent = &g_entities[i];
 
-		if ( ent->inuse && G_CoopOwnsEnt( ent ) )	// coop: the partner's replicas are not ours to save
+		if ( ent->inuse && G_CoopSaveEnt( ent ) )	// coop: the partner's replicas are not ours to save
 		{
 			iCount++;
 		}
@@ -690,7 +690,7 @@ static void WriteGEntities(qboolean qbAutosave)
 	{
 		gentity_t* ent = &g_entities[i];
 
-		if ( ent->inuse && G_CoopOwnsEnt( ent ) )
+		if ( ent->inuse && G_CoopSaveEnt( ent ) )
 		{
 			saved_game.write_chunk<int32_t>(
 				INT_ID('E', 'D', 'N', 'M'),
@@ -989,6 +989,34 @@ static void ReadGEntities(qboolean qbAutosave)
 }
 
 
+// coop: player 2's state (the host's coop_p2* cvars, g_coop_life.cpp) sleeps in the save (design 23)
+static const char *coopP2Cvars[] = { "coop_p2save", "coop_p2ammo", "coop_p2inv", "coop_p2fplvl" };
+#define COOP_P2_CHUNK_FIELD	256
+
+static void G_CoopWriteP2State( void )
+{
+	char buf[ARRAY_LEN( coopP2Cvars )][COOP_P2_CHUNK_FIELD];
+	memset( buf, 0, sizeof( buf ) );
+	for ( size_t i = 0; i < ARRAY_LEN( coopP2Cvars ); i++ )
+	{
+		gi.Cvar_VariableStringBuffer( coopP2Cvars[i], buf[i], sizeof( buf[i] ) );
+	}
+	ojk::SavedGameHelper saved_game( ::gi.saved_game );
+	saved_game.write_chunk( INT_ID('C','O','P','2'), &buf[0][0], (int)sizeof( buf ) );
+}
+
+static void G_CoopReadP2State( void )
+{
+	char buf[ARRAY_LEN( coopP2Cvars )][COOP_P2_CHUNK_FIELD];
+	ojk::SavedGameHelper saved_game( ::gi.saved_game );
+	saved_game.read_chunk( INT_ID('C','O','P','2'), &buf[0][0], (int)sizeof( buf ) );
+	for ( size_t i = 0; i < ARRAY_LEN( coopP2Cvars ); i++ )
+	{
+		buf[i][COOP_P2_CHUNK_FIELD - 1] = 0;
+		gi.cvar_set( coopP2Cvars[i], buf[i] );
+	}
+}
+
 void WriteLevel(qboolean qbAutosave)
 {
 	if (!qbAutosave) //-always save the client
@@ -1010,6 +1038,8 @@ void WriteLevel(qboolean qbAutosave)
 
 	extern void CG_WriteTheEvilCGHackStuff(void);
 	CG_WriteTheEvilCGHackStuff();
+
+	G_CoopWriteP2State();	// coop: player 2's state sleeps in the host's save (design 23)
 
 	// (Do NOT put any write-code below this line)
 	//
@@ -1076,6 +1106,8 @@ void ReadLevel(qboolean qbAutosave, qboolean qbLoadTransition)
 
 	extern void CG_ReadTheEvilCGHackStuff(void);
 	CG_ReadTheEvilCGHackStuff();
+
+	G_CoopReadP2State();
 
 	// (Do NOT put any read-code below this line)
 	//

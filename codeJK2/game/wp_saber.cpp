@@ -23,6 +23,7 @@ along with this program; if not, see <http://www.gnu.org/licenses/>.
 #include "g_headers.h"
 
 #include "g_local.h"
+#include "g_coop.h"
 #include "anims.h"
 #include "b_local.h"
 #include "bg_local.h"
@@ -5578,6 +5579,185 @@ void WP_ForceKnockdown( gentity_t *self, gentity_t *pusher, qboolean pull, qbool
 	self->forcePushTime = level.time + 600; // let the push effect last for 600 ms
 }
 
+// one client pushed or pulled by self (coop: also called by the target's owner, g_coop_act.cpp)
+void ForceThrowClient( gentity_t *self, gentity_t *target, qboolean pull )
+{
+	vec3_t	pushDir;
+	float	knockback = pull?0:200;
+
+//FIXMEFIXMEFIXMEFIXMEFIXME: extern a lot of this common code when I have the time!!!
+
+	//First, if this is the player we're push/pulling, see if he can counter it
+	if ( !target->s.number )
+	{//player
+		if ( target->health > 0 //alive
+			&& target->client //client
+			&& target->client->ps.torsoAnim != BOTH_FORCEGRIP_HOLD// BOTH_FORCEGRIP1//wasn't trying to grip anyone
+			&& (self->client->NPC_class != CLASS_DESANN || !Q_irand( 0, 2 ) )//only 30% chance of resisting a Desann push
+			&& target->client->ps.groundEntityNum != ENTITYNUM_NONE//on the ground
+			&& !PM_InKnockDown( &target->client->ps )//not knocked down already
+			&& target->client->ps.saberLockTime < level.time//not involved in a saberLock
+			&& target->client->ps.weaponTime < level.time//not attacking or otherwise busy
+			&& (target->client->ps.weapon == WP_SABER||target->client->ps.weapon == WP_MELEE) )//using saber or fists
+		{//trying to push or pull the player!
+			if ( target->client->ps.powerups[PW_FORCE_PUSH] > level.time//player was pushing/pulling too
+				||( pull && Q_irand( 0, (target->client->ps.forcePowerLevel[FP_PULL] - self->client->ps.forcePowerLevel[FP_PULL])*2+1 ) > 0 )//player's pull is high enough
+				||( !pull && Q_irand( 0, (target->client->ps.forcePowerLevel[FP_PUSH] - self->client->ps.forcePowerLevel[FP_PUSH])*2+1 ) > 0 ) )//player's push is high enough
+			{//player's force push/pull is high enough to try to stop me
+				if ( InFront( self->currentOrigin, target->client->renderInfo.eyePoint, target->client->ps.viewangles, 0.3f ) )
+				{//I'm in front of player
+					WP_ResistForcePush( target, self, qfalse );
+					target->client->ps.saberMove = target->client->ps.saberBounceMove = LS_READY;//don't finish whatever saber anim you may have been in
+					target->client->ps.saberBlocked = BLOCKED_NONE;
+					return;
+				}
+			}
+		}
+	}
+	else if ( target->client && Jedi_WaitingAmbush( target ) )
+	{
+		WP_ForceKnockdown( target, self, pull, qtrue, qfalse );
+		return;
+	}
+
+
+	//okay, everyone else (or player who couldn't resist it)...
+	if ( ((self->s.number == 0 && Q_irand( 0, 2 ) ) || Q_irand( 0, 2 ) ) && target->client && target->health > 0 //a living client
+			&& target->client->ps.weapon == WP_SABER //Jedi
+			&& target->health > 0 //alive
+			&& (self->client->NPC_class != CLASS_DESANN || !Q_irand( 0, 2 ) )//only 30% chance of resisting a Desann push
+			&& target->client->ps.groundEntityNum != ENTITYNUM_NONE //on the ground
+			&& InFront( self->currentOrigin, target->currentOrigin, target->client->ps.viewangles, 0.3f ) //I'm in front of him
+			&& ( target->client->ps.powerups[PW_FORCE_PUSH] > level.time ||//he's pushing too
+					(target->s.number != 0 && target->client->ps.weaponTime < level.time)//not the player and not attacking (NPC jedi auto-defend against pushes)
+			   )
+		)
+	{//Jedi don't get pushed, they resist as long as they aren't already attacking and are on the ground
+		if ( target->client->ps.saberLockTime > level.time )
+		{//they're in a lock
+			if ( target->client->ps.saberLockEnemy != self->s.number )
+			{//they're not in a lock with me
+				return;
+			}
+			else if ( pull || self->client->ps.forcePowerLevel[FP_PUSH] < FORCE_LEVEL_3 ||
+				target->client->ps.forcePowerLevel[FP_PUSH] > FORCE_LEVEL_2 )
+			{//they're in a lock with me, but my push is too weak
+				return;
+			}
+			else
+			{//we will knock them down
+				self->painDebounceTime = 0;
+				self->client->ps.weaponTime = 500;
+				if ( self->client->ps.forcePowersActive&(1<<FP_SPEED) )
+				{
+					self->client->ps.weaponTime = floor( self->client->ps.weaponTime * g_timescale->value );
+				}
+			}
+		}
+		if ( !pull && self->client->ps.forcePowerLevel[FP_PUSH] > FORCE_LEVEL_2 && !Q_irand(0,2) &&
+				target->client->ps.forcePowerLevel[FP_PUSH] < FORCE_LEVEL_3 )
+		{//a level 3 push can even knock down a jedi
+			if ( PM_InKnockDown( &target->client->ps ) )
+			{//can't knock them down again
+				return;
+			}
+			WP_ForceKnockdown( target, self, pull, qfalse, qtrue );
+		}
+		else
+		{
+			WP_ResistForcePush( target, self, qfalse );
+		}
+	}
+	else
+	{
+		//UGH: FIXME: for enemy jedi, they should probably always do force pull 3, and not your weapon (if player?)!
+		//shove them
+		if ( target->s.number && target->message )
+		{//an NPC who has a key
+			//don't push me... FIXME: maybe can pull the key off me?
+			WP_ForceKnockdown( target, self, pull, qfalse, qfalse );
+			return;
+		}
+		if ( pull )
+		{
+			VectorSubtract( self->currentOrigin, target->currentOrigin, pushDir );
+			if ( self->client->ps.forcePowerLevel[FP_PULL] > FORCE_LEVEL_1
+				&& target->s.weapon != WP_SABER
+				&& target->s.weapon != WP_MELEE
+				&& target->s.weapon != WP_THERMAL )
+			{//yank the weapon - NOTE: level 1 just knocks them down, not take weapon
+				//FIXME: weapon yank anim if not a knockdown?
+				if ( InFront( self->currentOrigin, target->currentOrigin, target->client->ps.viewangles, 0.0f ) )
+				{//enemy has to be facing me, too...
+					WP_DropWeapon( target, pushDir );
+				}
+			}
+			knockback += VectorNormalize( pushDir );
+			if ( knockback > 200 )
+			{
+				knockback = 200;
+			}
+			if ( self->client->ps.forcePowerLevel[FP_PULL] < FORCE_LEVEL_3 )
+			{//maybe just knock them down
+				knockback /= 3;
+			}
+		}
+		else
+		{
+			VectorSubtract( target->currentOrigin, self->currentOrigin, pushDir );
+			knockback -= VectorNormalize( pushDir );
+			if ( knockback < 100 )
+			{
+				knockback = 100;
+			}
+			//scale for push level
+			if ( self->client->ps.forcePowerLevel[FP_PUSH] < FORCE_LEVEL_2 )
+			{//maybe just knock them down
+				knockback /= 3;
+			}
+			else if ( self->client->ps.forcePowerLevel[FP_PUSH] > FORCE_LEVEL_2 )
+			{//super-hard push
+				//Hmm, maybe in this case can even nudge/knockdown a jedi?  Especially if close?
+				//knockback *= 5;
+			}
+		}
+		//actually push/pull the enemy
+		G_Throw( target, pushDir, knockback );
+		//make it so they don't actually hurt me when pulled at me...
+		target->forcePuller = self->s.number;
+
+		if ( target->client->ps.velocity[2] < knockback )
+		{
+			target->client->ps.velocity[2] = knockback;
+		}
+
+		if ( target->health > 0 )
+		{//target is still alive
+			if ( (target->s.number||(cg.renderingThirdPerson&&!cg.zoomMode)) //NPC or 3rd person player
+				&& ((!pull&&self->client->ps.forcePowerLevel[FP_PUSH] < FORCE_LEVEL_2 && target->client->ps.forcePowerLevel[FP_PUSH] < FORCE_LEVEL_1) //level 1 push
+					|| (pull && self->client->ps.forcePowerLevel[FP_PULL] < FORCE_LEVEL_2 && target->client->ps.forcePowerLevel[FP_PULL] < FORCE_LEVEL_1)) )//level 1 pull
+			{//NPC or third person player (without force push/pull skill), and force push/pull level is at 1
+				WP_ForceKnockdown(
+					target, self, pull,
+					(qboolean)(!pull && knockback > 150), qfalse );
+			}
+			else if ( !target->s.number )
+			{//player, have to force an anim on him
+				WP_ForceKnockdown(
+					target, self, pull,
+					(qboolean)(!pull && knockback > 150), qfalse );
+			}
+			else
+			{//NPC and force-push/pull at level 2 or higher
+				WP_ForceKnockdown(
+					target, self, pull,
+					(qboolean)(!pull && knockback > 100), qfalse );
+			}
+		}
+		target->forcePushTime = level.time + 600; // let the push effect last for 600 ms
+	}
+}
+
 void ForceThrow( gentity_t *self, qboolean pull )
 {//FIXME: pass in a target ent so we (an NPC) can push/pull just one targeted ent.
 	//shove things in front of you away
@@ -5975,180 +6155,11 @@ void ForceThrow( gentity_t *self, qboolean pull )
 		{
 			if ( push_list[x]->client )
 			{
-				vec3_t	pushDir;
-				float	knockback = pull?0:200;
-
-//FIXMEFIXMEFIXMEFIXMEFIXME: extern a lot of this common code when I have the time!!!
-
-				//First, if this is the player we're push/pulling, see if he can counter it
-				if ( !push_list[x]->s.number )
-				{//player
-					if ( push_list[x]->health > 0 //alive
-						&& push_list[x]->client //client
-						&& push_list[x]->client->ps.torsoAnim != BOTH_FORCEGRIP_HOLD// BOTH_FORCEGRIP1//wasn't trying to grip anyone
-						&& (self->client->NPC_class != CLASS_DESANN || !Q_irand( 0, 2 ) )//only 30% chance of resisting a Desann push
-						&& push_list[x]->client->ps.groundEntityNum != ENTITYNUM_NONE//on the ground
-						&& !PM_InKnockDown( &push_list[x]->client->ps )//not knocked down already
-						&& push_list[x]->client->ps.saberLockTime < level.time//not involved in a saberLock
-						&& push_list[x]->client->ps.weaponTime < level.time//not attacking or otherwise busy
-						&& (push_list[x]->client->ps.weapon == WP_SABER||push_list[x]->client->ps.weapon == WP_MELEE) )//using saber or fists
-					{//trying to push or pull the player!
-						if ( push_list[x]->client->ps.powerups[PW_FORCE_PUSH] > level.time//player was pushing/pulling too
-							||( pull && Q_irand( 0, (push_list[x]->client->ps.forcePowerLevel[FP_PULL] - self->client->ps.forcePowerLevel[FP_PULL])*2+1 ) > 0 )//player's pull is high enough
-							||( !pull && Q_irand( 0, (push_list[x]->client->ps.forcePowerLevel[FP_PUSH] - self->client->ps.forcePowerLevel[FP_PUSH])*2+1 ) > 0 ) )//player's push is high enough
-						{//player's force push/pull is high enough to try to stop me
-							if ( InFront( self->currentOrigin, push_list[x]->client->renderInfo.eyePoint, push_list[x]->client->ps.viewangles, 0.3f ) )
-							{//I'm in front of player
-								WP_ResistForcePush( push_list[x], self, qfalse );
-								push_list[x]->client->ps.saberMove = push_list[x]->client->ps.saberBounceMove = LS_READY;//don't finish whatever saber anim you may have been in
-								push_list[x]->client->ps.saberBlocked = BLOCKED_NONE;
-								continue;
-							}
-						}
-					}
-				}
-				else if ( push_list[x]->client && Jedi_WaitingAmbush( push_list[x] ) )
-				{
-					WP_ForceKnockdown( push_list[x], self, pull, qtrue, qfalse );
+				if ( G_CoopForwardThrow( self, push_list[x], pull ) )
+				{//coop: the owner of the target pushes it
 					continue;
 				}
-
-
-				//okay, everyone else (or player who couldn't resist it)...
-				if ( ((self->s.number == 0 && Q_irand( 0, 2 ) ) || Q_irand( 0, 2 ) ) && push_list[x]->client && push_list[x]->health > 0 //a living client
-						&& push_list[x]->client->ps.weapon == WP_SABER //Jedi
-						&& push_list[x]->health > 0 //alive
-						&& (self->client->NPC_class != CLASS_DESANN || !Q_irand( 0, 2 ) )//only 30% chance of resisting a Desann push
-						&& push_list[x]->client->ps.groundEntityNum != ENTITYNUM_NONE //on the ground
-						&& InFront( self->currentOrigin, push_list[x]->currentOrigin, push_list[x]->client->ps.viewangles, 0.3f ) //I'm in front of him
-						&& ( push_list[x]->client->ps.powerups[PW_FORCE_PUSH] > level.time ||//he's pushing too
-								(push_list[x]->s.number != 0 && push_list[x]->client->ps.weaponTime < level.time)//not the player and not attacking (NPC jedi auto-defend against pushes)
-						   )
-					)
-				{//Jedi don't get pushed, they resist as long as they aren't already attacking and are on the ground
-					if ( push_list[x]->client->ps.saberLockTime > level.time )
-					{//they're in a lock
-						if ( push_list[x]->client->ps.saberLockEnemy != self->s.number )
-						{//they're not in a lock with me
-							continue;
-						}
-						else if ( pull || self->client->ps.forcePowerLevel[FP_PUSH] < FORCE_LEVEL_3 ||
-							push_list[x]->client->ps.forcePowerLevel[FP_PUSH] > FORCE_LEVEL_2 )
-						{//they're in a lock with me, but my push is too weak
-							continue;
-						}
-						else
-						{//we will knock them down
-							self->painDebounceTime = 0;
-							self->client->ps.weaponTime = 500;
-							if ( self->client->ps.forcePowersActive&(1<<FP_SPEED) )
-							{
-								self->client->ps.weaponTime = floor( self->client->ps.weaponTime * g_timescale->value );
-							}
-						}
-					}
-					if ( !pull && self->client->ps.forcePowerLevel[FP_PUSH] > FORCE_LEVEL_2 && !Q_irand(0,2) &&
-							push_list[x]->client->ps.forcePowerLevel[FP_PUSH] < FORCE_LEVEL_3 )
-					{//a level 3 push can even knock down a jedi
-						if ( PM_InKnockDown( &push_list[x]->client->ps ) )
-						{//can't knock them down again
-							continue;
-						}
-						WP_ForceKnockdown( push_list[x], self, pull, qfalse, qtrue );
-					}
-					else
-					{
-						WP_ResistForcePush( push_list[x], self, qfalse );
-					}
-				}
-				else
-				{
-					//UGH: FIXME: for enemy jedi, they should probably always do force pull 3, and not your weapon (if player?)!
-					//shove them
-					if ( push_list[x]->s.number && push_list[x]->message )
-					{//an NPC who has a key
-						//don't push me... FIXME: maybe can pull the key off me?
-						WP_ForceKnockdown( push_list[x], self, pull, qfalse, qfalse );
-						continue;
-					}
-					if ( pull )
-					{
-						VectorSubtract( self->currentOrigin, push_list[x]->currentOrigin, pushDir );
-						if ( self->client->ps.forcePowerLevel[FP_PULL] > FORCE_LEVEL_1
-							&& push_list[x]->s.weapon != WP_SABER
-							&& push_list[x]->s.weapon != WP_MELEE
-							&& push_list[x]->s.weapon != WP_THERMAL )
-						{//yank the weapon - NOTE: level 1 just knocks them down, not take weapon
-							//FIXME: weapon yank anim if not a knockdown?
-							if ( InFront( self->currentOrigin, push_list[x]->currentOrigin, push_list[x]->client->ps.viewangles, 0.0f ) )
-							{//enemy has to be facing me, too...
-								WP_DropWeapon( push_list[x], pushDir );
-							}
-						}
-						knockback += VectorNormalize( pushDir );
-						if ( knockback > 200 )
-						{
-							knockback = 200;
-						}
-						if ( self->client->ps.forcePowerLevel[FP_PULL] < FORCE_LEVEL_3 )
-						{//maybe just knock them down
-							knockback /= 3;
-						}
-					}
-					else
-					{
-						VectorSubtract( push_list[x]->currentOrigin, self->currentOrigin, pushDir );
-						knockback -= VectorNormalize( pushDir );
-						if ( knockback < 100 )
-						{
-							knockback = 100;
-						}
-						//scale for push level
-						if ( self->client->ps.forcePowerLevel[FP_PUSH] < FORCE_LEVEL_2 )
-						{//maybe just knock them down
-							knockback /= 3;
-						}
-						else if ( self->client->ps.forcePowerLevel[FP_PUSH] > FORCE_LEVEL_2 )
-						{//super-hard push
-							//Hmm, maybe in this case can even nudge/knockdown a jedi?  Especially if close?
-							//knockback *= 5;
-						}
-					}
-					//actually push/pull the enemy
-					G_Throw( push_list[x], pushDir, knockback );
-					//make it so they don't actually hurt me when pulled at me...
-					push_list[x]->forcePuller = self->s.number;
-
-					if ( push_list[x]->client->ps.velocity[2] < knockback )
-					{
-						push_list[x]->client->ps.velocity[2] = knockback;
-					}
-
-					if ( push_list[x]->health > 0 )
-					{//target is still alive
-						if ( (push_list[x]->s.number||(cg.renderingThirdPerson&&!cg.zoomMode)) //NPC or 3rd person player
-							&& ((!pull&&self->client->ps.forcePowerLevel[FP_PUSH] < FORCE_LEVEL_2 && push_list[x]->client->ps.forcePowerLevel[FP_PUSH] < FORCE_LEVEL_1) //level 1 push
-								|| (pull && self->client->ps.forcePowerLevel[FP_PULL] < FORCE_LEVEL_2 && push_list[x]->client->ps.forcePowerLevel[FP_PULL] < FORCE_LEVEL_1)) )//level 1 pull
-						{//NPC or third person player (without force push/pull skill), and force push/pull level is at 1
-							WP_ForceKnockdown(
-								push_list[x], self, pull,
-								(qboolean)(!pull && knockback > 150), qfalse );
-						}
-						else if ( !push_list[x]->s.number )
-						{//player, have to force an anim on him
-							WP_ForceKnockdown(
-								push_list[x], self, pull,
-								(qboolean)(!pull && knockback > 150), qfalse );
-						}
-						else
-						{//NPC and force-push/pull at level 2 or higher
-							WP_ForceKnockdown(
-								push_list[x], self, pull,
-								(qboolean)(!pull && knockback > 100), qfalse );
-						}
-					}
-					push_list[x]->forcePushTime = level.time + 600; // let the push effect last for 600 ms
-				}
+				ForceThrowClient( self, push_list[x], pull );
 			}
 			else if ( push_list[x]->s.weapon == WP_SABER && (push_list[x]->contents&CONTENTS_LIGHTSABER) )
 			{//a thrown saber, just send it back
@@ -6683,6 +6694,45 @@ qboolean WP_CheckBreakControl( gentity_t *self )
 	return qfalse;
 }
 
+// coop: the partner (self = its puppet) mind tricked traceEnt, an NPC we run (g_coop_act.cpp "mtrick")
+void WP_CoopApplyMindTrick( gentity_t *self, gentity_t *traceEnt, int trickLevel )
+{
+	if ( !traceEnt->NPC || !traceEnt->client || traceEnt->health <= 0 || ( traceEnt->NPC->scriptFlags & SCF_NO_MIND_TRICK ) )
+	{
+		return;
+	}
+	if ( G_ActivateBehavior( traceEnt, BSET_MINDTRICK ) || traceEnt->client->playerTeam == self->client->playerTeam )
+	{
+		return;
+	}
+	if ( traceEnt->s.weapon == WP_SABER )
+	{
+		NPC_Jedi_PlayConfusionSound( traceEnt );
+		return;
+	}
+	if ( trickLevel > FORCE_LEVEL_2 && traceEnt->s.weapon != WP_NONE )
+	{//turn them to the partner's side
+		if ( traceEnt->enemy )
+		{
+			G_ClearEnemy( traceEnt );
+		}
+		traceEnt->client->leader = self;
+		team_t	saveTeam = traceEnt->client->enemyTeam;
+		traceEnt->client->enemyTeam = traceEnt->client->playerTeam;
+		traceEnt->client->playerTeam = saveTeam;
+		traceEnt->NPC->charmedTime = level.time + mindTrickTime[trickLevel < FORCE_LEVEL_3 ? trickLevel : FORCE_LEVEL_3];
+	}
+	else
+	{
+		traceEnt->NPC->confusionTime = level.time + mindTrickTime[trickLevel > FORCE_LEVEL_0 && trickLevel <= FORCE_LEVEL_3 ? trickLevel : FORCE_LEVEL_1];
+		NPC_PlayConfusionSound( traceEnt );
+		if ( traceEnt->enemy )
+		{
+			G_ClearEnemy( traceEnt );
+		}
+	}
+}
+
 void ForceTelepathy( gentity_t *self )
 {
 	trace_t	tr;
@@ -6757,6 +6807,12 @@ void ForceTelepathy( gentity_t *self )
 			targetLive = qtrue;
 			break;
 		}
+	}
+	if ( targetLive && traceEnt->NPC && G_CoopForwardMindTrick( self, traceEnt ) )
+	{//coop: the NPC's owner applies it, the NPC then follows us and runs on the host (design 26)
+		WP_ForcePowerStart( self, FP_TELEPATHY, 0 );
+		NPC_SetAnim( self, SETANIM_TORSO, BOTH_MINDTRICK1, SETANIM_FLAG_OVERRIDE|SETANIM_FLAG_RESTART|SETANIM_FLAG_HOLD );
+		return;
 	}
 	if ( targetLive && traceEnt->NPC )
 	{//hit an organic non-player

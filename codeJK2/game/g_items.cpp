@@ -25,6 +25,7 @@ along with this program; if not, see <http://www.gnu.org/licenses/>.
 #include "g_headers.h"
 
 #include "g_local.h"
+#include "g_coop.h"
 #include "g_functions.h"
 #include "g_items.h"
 #include "wp_saber.h"
@@ -472,6 +473,81 @@ Touch_Item
 ===============
 */
 extern cvar_t		*g_timescale;
+// the item-specific pickup into other, with the pickup event; 0: not taken (coop: also the partner's
+// pickups, with a stand-in item entity, g_coop_act.cpp)
+int G_ItemPickupInto( gentity_t *ent, gentity_t *other ) {
+	int respawn = 0;
+	qboolean bHadWeapon = qfalse;
+	// call the item-specific pickup function
+	switch( ent->item->giType )
+	{
+	case IT_WEAPON:
+		if ( other->NPC && other->s.weapon == WP_NONE )
+		{//Make them duck and sit here for a few seconds
+			int pickUpTime = Q_irand( 1000, 3000 );
+			TIMER_Set( other, "duck", pickUpTime );
+			TIMER_Set( other, "roamTime", pickUpTime );
+			TIMER_Set( other, "stick", pickUpTime );
+			TIMER_Set( other, "verifyCP", pickUpTime );
+			TIMER_Set( other, "attackDelay", 600 );
+			respawn = 0;
+		}
+		if ( other->client->ps.stats[STAT_WEAPONS] & ( 1 << ent->item->giTag ) )
+		{
+			bHadWeapon = qtrue;
+		}
+		respawn = Pickup_Weapon(ent, other);
+		break;
+	case IT_AMMO:
+		respawn = Pickup_Ammo(ent, other);
+		break;
+	case IT_ARMOR:
+		respawn = Pickup_Armor(ent, other);
+		break;
+	case IT_HEALTH:
+		respawn = Pickup_Health(ent, other);
+		break;
+	case IT_HOLDABLE:
+		respawn = Pickup_Holdable(ent, other);
+		break;
+	case IT_BATTERY:
+		respawn = Pickup_Battery( ent, other );
+		break;
+	case IT_HOLOCRON:
+		respawn = Pickup_Holocron( ent, other );
+		break;
+	default:
+		return 0;
+	}
+
+	if ( !respawn )
+	{
+		return 0;
+	}
+
+	// play the normal pickup sound
+	if ( !other->s.number && g_timescale->value < 1.0f  )
+	{//SIGH... with timescale on, you lose events left and right
+extern void CG_ItemPickup( int itemNum, qboolean bHadItem );
+		// but we're SP so we'll cheat
+		cgi_S_StartSound( NULL, other->s.number, CHAN_AUTO,	cgi_S_RegisterSound( ent->item->pickup_sound ) );
+		// show icon and name on status bar
+		CG_ItemPickup( ent->s.modelindex, bHadWeapon );
+	}
+	else
+	{
+		if ( bHadWeapon )
+		{
+			G_AddEvent( other, EV_ITEM_PICKUP, -ent->s.modelindex );
+		}
+		else
+		{
+			G_AddEvent( other, EV_ITEM_PICKUP, ent->s.modelindex );
+		}
+	}
+	return respawn;
+}
+
 void Touch_Item (gentity_t *ent, gentity_t *other, trace_t *trace) {
 	int			respawn = 0;
 
@@ -527,7 +603,7 @@ void Touch_Item (gentity_t *ent, gentity_t *other, trace_t *trace) {
 	}
 	else if (!(ent->spawnflags &  ITMSF_TEAM) && !(ent->spawnflags &  ITMSF_MONSTER))
 	{// Only player can pick it up
-		if ( other->s.number != 0 )	// Not the player?
+		if ( other->s.number >= MAX_CLIENTS )	// Not a player? (coop: the partner is 1)
 		{
 			return;
 		}
@@ -553,72 +629,23 @@ void Touch_Item (gentity_t *ent, gentity_t *other, trace_t *trace) {
 		gi.Printf( "Touch_Item: %s is not an item!\n", ent->classname);
 		return;
 	}
-	qboolean bHadWeapon = qfalse;
-	// call the item-specific pickup function
-	switch( ent->item->giType )
-	{
-	case IT_WEAPON:
-		if ( other->NPC && other->s.weapon == WP_NONE )
-		{//Make them duck and sit here for a few seconds
-			int pickUpTime = Q_irand( 1000, 3000 );
-			TIMER_Set( other, "duck", pickUpTime );
-			TIMER_Set( other, "roamTime", pickUpTime );
-			TIMER_Set( other, "stick", pickUpTime );
-			TIMER_Set( other, "verifyCP", pickUpTime );
-			TIMER_Set( other, "attackDelay", 600 );
-			respawn = 0;
+	if ( g_coopMode != COOP_MODE_SOLO && !G_CoopOwnsEnt( other ) )
+	{//coop host: the guest's puppet touched it, the guest takes it (design 19)
+		G_CoopSendPickup( ent );
+		if ( G_CoopSharedItem( ent->item ) && g_entities[0].inuse && g_entities[0].health > 0 )
+		{//weapons and keys: we get them too
+			G_ItemPickupInto( ent, &g_entities[0] );
 		}
-		if ( other->client->ps.stats[STAT_WEAPONS] & ( 1 << ent->item->giTag ) )
-		{
-			bHadWeapon = qtrue;
-		}
-		respawn = Pickup_Weapon(ent, other);
-		break;
-	case IT_AMMO:
-		respawn = Pickup_Ammo(ent, other);
-		break;
-	case IT_ARMOR:
-		respawn = Pickup_Armor(ent, other);
-		break;
-	case IT_HEALTH:
-		respawn = Pickup_Health(ent, other);
-		break;
-	case IT_HOLDABLE:
-		respawn = Pickup_Holdable(ent, other);
-		break;
-	case IT_BATTERY:
-		respawn = Pickup_Battery( ent, other );
-		break;
-	case IT_HOLOCRON:
-		respawn = Pickup_Holocron( ent, other );
-		break;
-	default:
-		return;
-	}
-
-	if ( !respawn )
-	{
-		return;
-	}
-
-	// play the normal pickup sound
-	if ( !other->s.number && g_timescale->value < 1.0f  )
-	{//SIGH... with timescale on, you lose events left and right
-extern void CG_ItemPickup( int itemNum, qboolean bHadItem );
-		// but we're SP so we'll cheat
-		cgi_S_StartSound( NULL, other->s.number, CHAN_AUTO,	cgi_S_RegisterSound( ent->item->pickup_sound ) );
-		// show icon and name on status bar
-		CG_ItemPickup( ent->s.modelindex, bHadWeapon );
 	}
 	else
 	{
-		if ( bHadWeapon )
+		if ( !G_ItemPickupInto( ent, other ) )
 		{
-			G_AddEvent( other, EV_ITEM_PICKUP, -ent->s.modelindex );
+			return;
 		}
-		else
-		{
-			G_AddEvent( other, EV_ITEM_PICKUP, ent->s.modelindex );
+		if ( other->s.number == 0 && G_CoopSharedItem( ent->item ) )
+		{//coop: the partner gets weapons and keys too
+			G_CoopSendPickup( ent );
 		}
 	}
 

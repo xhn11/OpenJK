@@ -479,9 +479,10 @@ void NPC_BSST_Sleep( void )
 		//See if it was enough to wake us up
 		if ( level.alertEvents[alertEvent].level == AEL_DISCOVERED && (NPCInfo->scriptFlags&SCF_LOOK_FOR_ENEMIES) )
 		{
-			if ( &g_entities[0] && g_entities[0].health > 0 )
+			gentity_t *player = G_ClosestPlayer( level.alertEvents[alertEvent].position, qtrue );	// coop: either player
+			if ( player && player->health > 0 )
 			{
-				G_SetEnemy( NPC, &g_entities[0] );
+				G_SetEnemy( NPC, player );
 				return;
 			}
 		}

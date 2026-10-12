@@ -24,6 +24,7 @@ along with this program; if not, see <http://www.gnu.org/licenses/>.
 #include "../server/exe_headers.h"
 
 #include "server.h"
+#include "../coop/coop_public.h"
 #include "../game/weapons.h"
 #include "../game/g_items.h"
 #include "../game/statindex.h"
@@ -240,6 +241,7 @@ static void SV_MapTransition_f(void)
 		Cvar_Set( "spawntarget", "" );
 	}
 
+	Coop_NoteTransition( spawntarget );	// coop host: the guest changes levels with us (design 22)
 	SV_Map_( eForceReload_NOTHING );
 }
 

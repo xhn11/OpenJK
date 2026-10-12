@@ -12,6 +12,8 @@ typedef struct {
 	qboolean	readySent;				// guest: coop_ready sent for mapGen
 	int			guestReadyGen;			// host: generation the guest confirmed, 0 = none
 	qboolean	onWorldPending;			// coop_onworld must run
+	qboolean	transition;				// guest: the host changed levels, carry our player over (design 22)
+	char		spawnTarget[MAX_QPATH];	// guest: the host's spawn target for that transition
 } coopSession_t;
 
 static int				coopHostMapGen;	// bumped by every finished map load on this machine (the host uses it)
@@ -69,6 +71,25 @@ qboolean Coop_GuestInWorld( void ) {
 		&& Coop_LocalMapReady() && !Q_stricmp( sv_mapname->string, sess.mapName ) );
 }
 
+qboolean Coop_GuestSaveRequest( const char *name ) {
+	if ( coop.role != COOP_ROLE_GUEST || coop.state != COOP_LINK_ACTIVE ) {
+		return qfalse;
+	}
+	if ( !strchr( name, '"' ) && !strchr( name, ';' ) ) {
+		Coop_AddReliable( va( "coop_savereq \"%s\"", name ) );
+	}
+	Com_Printf( "COOP: only the host saves, asked it to save as %s\n", name );
+	return qtrue;
+}
+
+qboolean Coop_GuestLoadBlocked( void ) {
+	if ( coop.role != COOP_ROLE_GUEST || coop.state != COOP_LINK_ACTIVE ) {
+		return qfalse;
+	}
+	Com_Printf( "COOP: only the host loads saved games, the guest follows its map\n" );
+	return qtrue;
+}
+
 int Coop_PartnerInWorld( void ) {
 	return coop.role == COOP_ROLE_HOST ? Coop_HostGuestInWorld() : Coop_GuestInWorld();
 }
@@ -89,10 +110,20 @@ qboolean Coop_HostGuestInWorld( void ) {
 		&& sess.guestReadyGen == coopHostMapGen && Coop_LocalMapRunning() );
 }
 
+static int				coopTransitionGen;	// host: the map generation a level change (maptransition) started
+static char				coopTransitionTarget[MAX_QPATH];
+
+// host: SV_MapTransition_f - the next map is a level change, not a fresh start
+void Coop_NoteTransition( const char *spawnTarget ) {
+	coopTransitionGen = coopHostMapGen + 1;
+	Q_strncpyz( coopTransitionTarget, spawnTarget ? spawnTarget : "", sizeof( coopTransitionTarget ) );
+}
+
 static void Coop_SendMap( void ) {
 	sess.guestReadyGen = 0;
-	Coop_AddReliable( va( "coop_map %d %s %d", coopHostMapGen, sv_mapname->string,
-		Cvar_VariableIntegerValue( "helpUsObi" ) ? 1 : 0 ) );
+	const qboolean transition = (qboolean)( coopTransitionGen == coopHostMapGen );
+	Coop_AddReliable( va( "coop_map %d %s %d %d \"%s\"", coopHostMapGen, sv_mapname->string,
+		Cvar_VariableIntegerValue( "helpUsObi" ) ? 1 : 0, transition ? 1 : 0, transition ? coopTransitionTarget : "" ) );
 	Com_Printf( "COOP: sent map %s to the guest\n", sv_mapname->string );
 }
 
@@ -136,7 +167,12 @@ void Coop_SessionFrame( void ) {
 		if ( sess.loadPending ) {
 			sess.loadPending = qfalse;
 			Com_Printf( "COOP: loading %s from host\n", sess.mapName );
-			Cbuf_AddText( va( "%s %s\n", sess.cheats ? "devmap" : "map", sess.mapName ) );
+			if ( sess.transition ) {
+				// like the host's target_level_change: our weapons, ammo and health come along
+				Cbuf_AddText( va( "maptransition %s %s\n", sess.mapName, sess.spawnTarget ) );
+			} else {
+				Cbuf_AddText( va( "%s %s\n", sess.cheats ? "devmap" : "map", sess.mapName ) );
+			}
 			return;
 		}
 		if ( sess.mapGen && !sess.readySent && Coop_LocalMapReady() && !Q_stricmp( sv_mapname->string, sess.mapName ) ) {
@@ -171,6 +207,8 @@ qboolean Coop_ExecuteReliableCmd( const char *cmd ) {
 		sess.mapGen = gen;
 		Q_strncpyz( sess.mapName, map, sizeof( sess.mapName ) );
 		sess.cheats = atoi( Cmd_Argv( 3 ) );
+		sess.transition = (qboolean)( atoi( Cmd_Argv( 4 ) ) != 0 && Coop_LocalMapRunning() );
+		Q_strncpyz( sess.spawnTarget, Cmd_Argv( 5 ), sizeof( sess.spawnTarget ) );
 		sess.loadPending = qtrue;
 		sess.readySent = qfalse;
 		CoopCS_NewMap();
@@ -201,6 +239,16 @@ qboolean Coop_ExecuteReliableCmd( const char *cmd ) {
 			const char *text = cmd + 6;		// raw text after "svcmd ": quotes stay as the host wrote them
 			Com_Printf( "COOP: server command from host: %s\n", text );
 			SV_SendServerCommand( NULL, "%s", text );
+		}
+		return qtrue;
+	}
+	if ( !Q_stricmp( c, "coop_savereq" ) ) {
+		const char *name = Cmd_Argv( 1 );
+		if ( coop.role == COOP_ROLE_HOST && Coop_HostGuestInWorld() && name[0] && !strchr( name, ';' ) && !strchr( name, '"' ) ) {
+			Com_Printf( "COOP: the guest asked for a save (%s)\n", name );
+			Cbuf_AddText( va( "save %s\n", name ) );
+		} else {
+			Com_Printf( "COOP: save request ignored (role %d, in world %d, name %s)\n", coop.role, Coop_HostGuestInWorld(), name );
 		}
 		return qtrue;
 	}

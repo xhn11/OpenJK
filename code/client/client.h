@@ -67,7 +67,11 @@ new gamestate_t, potentially several times during an established connection
 // the parseEntities array must be large enough to hold PACKET_BACKUP frames of
 // entities, so that when a delta compressed message arives from the server
 // it can be un-deltad from the original
+#ifdef JK2_MODE
+#define MAX_PARSE_ENTITIES	( PACKET_BACKUP * 128 )	// coop: matches svs.numSnapshotEntities (sv_init.cpp), snapshots hold both players' views
+#else
 #define MAX_PARSE_ENTITIES	512
+#endif
 
 extern int g_console_field_width;
 

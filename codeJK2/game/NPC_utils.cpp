@@ -1117,7 +1117,7 @@ gentity_t *NPC_PickEnemyExt( qboolean checkAlerts = qfalse )
 			if ( event->level >= AEL_DISCOVERED )
 			{
 				//If it's the player, attack him
-				if ( event->owner == &g_entities[0] )
+				if ( G_IsPlayer( event->owner ) )
 					return event->owner;
 
 				//If it's on our team, then take its enemy as well
@@ -1138,7 +1138,7 @@ NPC_FindPlayer
 
 qboolean NPC_FindPlayer( void )
 {
-	return NPC_TargetVisible( &g_entities[0] );
+	return (qboolean)( NPC_TargetVisible( &g_entities[0] ) || ( G_PlayerNum( 1 ) && NPC_TargetVisible( G_PlayerNum( 1 ) ) ) );
 }
 
 /*
@@ -1154,23 +1154,30 @@ static qboolean NPC_CheckPlayerDistance( void )
 		return qfalse;
 
 	//Only do this for non-players
-	if ( NPC->enemy->s.number == 0 )
+	if ( G_IsPlayer( NPC->enemy ) )
 		return qfalse;
 
 	//must be set up to get mad at player
 	if ( !NPC->client || NPC->client->enemyTeam != TEAM_PLAYER )
 		return qfalse;
 
-	//Must be within our FOV
-	if ( InFOV( &g_entities[0], NPC, NPCInfo->stats.hfov, NPCInfo->stats.vfov ) == qfalse )
-		return qfalse;
-
 	float	distance = DistanceSquared( NPC->currentOrigin, NPC->enemy->currentOrigin );
 
-	if ( distance > DistanceSquared( NPC->currentOrigin, g_entities[0].currentOrigin ) )
-	{
-		G_SetEnemy( NPC, &g_entities[0] );
-		return qtrue;
+	for ( int i = 0; i < MAX_CLIENTS; i++ )
+	{//coop: either player (M7)
+		gentity_t *player = G_PlayerNum( i );
+		if ( !player )
+			continue;
+
+		//Must be within our FOV
+		if ( InFOV( player, NPC, NPCInfo->stats.hfov, NPCInfo->stats.vfov ) == qfalse )
+			continue;
+
+		if ( distance > DistanceSquared( NPC->currentOrigin, player->currentOrigin ) )
+		{
+			G_SetEnemy( NPC, player );
+			return qtrue;
+		}
 	}
 
 	return qfalse;

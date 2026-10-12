@@ -52,6 +52,7 @@ void G_Coop_GetEntityExtra( int entNum, coopEntExtra_t *out ) {
 	VectorCopy( ent->maxs, out->maxs );
 	out->areaPortalOpen = G_CoopPortalCount( entNum );
 	out->triggerEnabled = ( ent->svFlags & SVF_INACTIVE ) ? 0 : 1;
+	out->buttons = ent->client ? ent->client->usercmd.buttons : 0;
 }
 
 static gentity_t *G_CoopEntityPtr( int num ) {
@@ -190,6 +191,9 @@ void G_Coop_ApplyEntity( int entNum, const entityState_t *es, const playerState_
 		return;		// entity 0 is always our own player
 	}
 	gentity_t *ent = &g_entities[entNum];
+	if ( entNum >= MAX_CLIENTS && ent->inuse && G_CoopOwnsEnt( ent ) && ent->client ) {
+		return;		// an NPC we run (migrated, design 9): the partner's frames from before the transfer are stale
+	}
 	if ( entNum >= MAX_CLIENTS && ent->inuse && G_CoopOwnsEnt( ent ) ) {
 		// the guest allocates its own entities top-down (code/coop/coop_entnum.h); when the map is nearly
 		// full both can reach the same slot. The host's entity wins, the guest's local one goes.
@@ -224,6 +228,7 @@ void G_Coop_ApplyEntity( int entNum, const entityState_t *es, const playerState_
 		char *saberModel = ent->client->ps.saberModel;	// a pointer into this machine's memory (plan-M3 R1)
 		ent->client->ps = *ps;
 		ent->client->ps.saberModel = saberModel;
+		ent->client->usercmd.buttons = ex->buttons;
 	}
 	ent->spawnflags = ex->spawnflags;
 	ent->health = ex->health;
@@ -264,6 +269,8 @@ void G_Coop_FreeEntity( int entNum ) {
 	if ( ent->inuse && !G_CoopOwnsEnt( ent ) ) {
 		if ( entNum == 1 ) {
 			gi.Printf( "COOP: partner puppet removed\n" );
+		} else if ( G_CoopNpcKeep( ent ) || G_CoopClaimKeep( ent ) ) {
+			return;
 		}
 		G_FreeEntity( ent );
 	}
@@ -271,7 +278,8 @@ void G_Coop_FreeEntity( int entNum ) {
 
 void G_CoopRunReplica( gentity_t *ent ) {
 	if ( ent->client ) {
-		return;		// NPCs: every snapshot places them (ps.origin), nothing to integrate
+		G_CoopRunPuppet( ent );	// NPCs: every snapshot places them (ps.origin), nothing to integrate
+		return;
 	}
 	if ( ent->s.eType == ET_MOVER ) {
 		G_CoopRunReplicaMover( ent );

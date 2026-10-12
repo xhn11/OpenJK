@@ -22,6 +22,10 @@ void G_CoopInitGame( void ) {
 	g_coopSpawningReplica = qfalse;
 	memset( g_coopOwner, COOP_MODE_HOST, sizeof( g_coopOwner ) );
 	memset( g_coopPortal, 0, sizeof( g_coopPortal ) );
+	G_CoopNpcInit();
+	G_CoopP2Init();
+	G_CoopLifeInit();
+	G_CoopClaimInit();
 	g_coopOwner[0] = (signed char)( g_coopMode == COOP_MODE_GUEST ? COOP_MODE_GUEST : COOP_MODE_HOST );
 	g_coopOwner[1] = (signed char)( g_coopMode == COOP_MODE_GUEST ? COOP_MODE_HOST : COOP_MODE_GUEST );
 	if ( g_coopMode != COOP_MODE_SOLO ) {
@@ -80,7 +84,7 @@ qboolean G_CoopIsPhysicalTrigger( const gentity_t *ent ) {
 }
 
 qboolean G_CoopRunsLocally( const gentity_t *ent ) {
-	return (qboolean)( G_CoopOwnsEnt( ent ) || ( g_coopMode == COOP_MODE_GUEST && G_CoopIsPhysicalTrigger( ent ) ) );
+	return (qboolean)( ( G_CoopOwnsEnt( ent ) && !G_CoopNpcGiving( ent ) ) || ( g_coopMode == COOP_MODE_GUEST && G_CoopIsPhysicalTrigger( ent ) ) );
 }
 
 qboolean G_CoopBlockUse( const gentity_t *self ) {
@@ -92,7 +96,7 @@ qboolean G_CoopBlockTouch( const gentity_t *self ) {
 }
 
 qboolean G_CoopBlockDamage( const gentity_t *targ ) {
-	return (qboolean)( g_coopMode != COOP_MODE_SOLO && !G_CoopOwnsEnt( targ ) );
+	return (qboolean)( g_coopMode != COOP_MODE_SOLO && ( !G_CoopOwnsEnt( targ ) || G_CoopNpcGiving( targ ) ) );
 }
 
 void G_CoopAdjustAreaPortal( gentity_t *ent, qboolean open ) {
@@ -151,8 +155,8 @@ void G_CoopEntInfo_f( void ) {
 	coopEntExtra_t ex;
 	G_Coop_GetEntityExtra( num, &ex );
 	const gentity_t *ent = &g_entities[num];
-	gi.Printf( "COOP: entinfo %d owner %d class %s npc \"%s\" linked %d portal %d origin %.0f %.0f %.0f\n",
-		num, G_Coop_EntityOwner( num ), ex.inuse ? ex.classname : "(free)", ex.npcType, ex.linked, ex.areaPortalOpen,
+	gi.Printf( "COOP: entinfo %d owner %d class %s npc \"%s\" linked %d portal %d health %d origin %.0f %.0f %.0f\n",
+		num, G_Coop_EntityOwner( num ), ex.inuse ? ex.classname : "(free)", ex.npcType, ex.linked, ex.areaPortalOpen, ex.health,
 		ent->currentOrigin[0], ent->currentOrigin[1], ent->currentOrigin[2] );
 }
 
@@ -198,30 +202,91 @@ void G_CoopSend( const char *fmt, ... ) {
 	gi.Coop_SendGameCommand( text );
 }
 
-typedef struct {
-	const char	*name;
-	void		( *fn )( void );
-} coopGameCmd_t;
-
-static void G_CoopCmd_Echo( void ) {
-	gi.Printf( "COOP: game command echo %s\n", gi.argv( 2 ) );
-}
-
-static const coopGameCmd_t coopGameCmds[] = {
-	{ "echo", G_CoopCmd_Echo },
-};
-
-void G_Coop_GameCommand( void ) {
-	const char *name = gi.argv( 1 );
-	for ( size_t i = 0; i < ARRAY_LEN( coopGameCmds ); i++ ) {
-		if ( !Q_stricmp( name, coopGameCmds[i].name ) ) {
-			coopGameCmds[i].fn();
-			return;
-		}
-	}
-	gi.Printf( "COOP: unknown game command %s\n", name );
-}
-
 void G_CoopGTest_f( void ) {
 	G_CoopSend( "echo \"%s\"", gi.argv( 1 ) );
+}
+
+// ---------------------------------------------------------------- two players (M7, design 6, 17, 20, 26)
+// Entity 0 is this machine's player, entity 1 the partner's puppet. Code that meant "the player"
+// asks these instead of comparing with g_entities[0].
+
+qboolean G_IsPlayer( const gentity_t *ent ) {
+	if ( !ent || !ent->client ) {
+		return qfalse;
+	}
+	return (qboolean)( ent->s.number == 0 || ( ent->s.number == 1 && g_coopMode != COOP_MODE_SOLO && ent->inuse ) );
+}
+
+gentity_t *G_PlayerNum( int i ) {
+	if ( i < 0 || i >= MAX_CLIENTS ) {
+		return NULL;
+	}
+	gentity_t *ent = &g_entities[i];
+	return ( ent->inuse && ent->client && ( i == 0 || g_coopMode != COOP_MODE_SOLO ) ) ? ent : NULL;
+}
+
+gentity_t *G_ClosestPlayer( const vec3_t org, qboolean aliveOnly ) {
+	gentity_t *best = NULL;
+	float bestDist = 0;
+	for ( int i = 0; i < MAX_CLIENTS; i++ ) {
+		gentity_t *p = G_PlayerNum( i );
+		if ( !p || ( aliveOnly && p->health <= 0 ) ) {
+			continue;
+		}
+		const float d = DistanceSquared( org, p->currentOrigin );
+		if ( !best || d < bestDist ) {
+			best = p;
+			bestDist = d;
+		}
+	}
+	return best ? best : &g_entities[0];
+}
+
+qboolean G_AnyPlayerAlive( void ) {
+	for ( int i = 0; i < MAX_CLIENTS; i++ ) {
+		const gentity_t *p = G_PlayerNum( i );
+		if ( p && p->health > 0 ) {
+			return qtrue;
+		}
+	}
+	return qfalse;
+}
+
+// saves (host only, design 23): everything we own, and the NPCs the guest runs right now - they come
+// back to the host with the save; never the puppet or the guest's missiles
+qboolean G_CoopSaveEnt( const gentity_t *ent ) {
+	if ( G_CoopOwnsEnt( ent ) ) {
+		return qtrue;
+	}
+	return (qboolean)( ent->NPC && ent->client && ent->s.number >= MAX_CLIENTS );
+}
+
+// design 20: g_coopFriendlyFire 0 - neither player's attacks hurt the other one
+qboolean G_CoopNoFriendlyFire( const gentity_t *targ, const gentity_t *attacker ) {
+	static cvar_t *g_coopFriendlyFire;
+	if ( g_coopMode == COOP_MODE_SOLO || targ == attacker || !G_IsPlayer( targ ) || !G_IsPlayer( attacker ) ) {
+		return qfalse;
+	}
+	if ( !g_coopFriendlyFire ) {
+		g_coopFriendlyFire = gi.cvar( "g_coopFriendlyFire", "0", CVAR_ARCHIVE );
+	}
+	return (qboolean)!g_coopFriendlyFire->integer;
+}
+
+// design 20: the allies follow Kyle; while he waits to respawn, they follow player 2
+void G_CoopAlliesFollow( void ) {
+	gentity_t *kyle = &g_entities[0];
+	gentity_t *p2 = G_PlayerNum( 1 );
+	if ( g_coopMode != COOP_MODE_HOST || !p2 ) {
+		return;
+	}
+	const qboolean kyleDown = (qboolean)( kyle->health <= 0 && p2->health > 0 );
+	gentity_t *from = kyleDown ? kyle : p2;
+	gentity_t *to = kyleDown ? p2 : kyle;
+	for ( int i = MAX_CLIENTS; i < globals.num_entities; i++ ) {
+		gentity_t *ent = &g_entities[i];
+		if ( ent->inuse && ent->client && ent->NPC && ent->client->leader == from && ent->client->playerTeam == TEAM_PLAYER ) {
+			ent->client->leader = to;
+		}
+	}
 }

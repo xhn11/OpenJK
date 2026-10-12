@@ -212,16 +212,24 @@ void NPC_RemoveBody( gentity_t *self )
 		{
 			self->nextthink = level.time + FRAMETIME; // try back in a second
 
-			if ( DistanceSquared( g_entities[0].currentOrigin, self->currentOrigin ) <= REMOVE_DISTANCE_SQR )
-			{
-				return;
-			}
-
-			if ( (InFOV( self, &g_entities[0], 110, 90 )) ) // generous FOV check
-			{
-				if ( (NPC_ClearLOS( &g_entities[0], self->currentOrigin )) )
+			for ( int coopPlayer = 0; coopPlayer < MAX_CLIENTS; coopPlayer++ )
+			{//coop: neither player may see the body go
+				gentity_t *player = G_PlayerNum( coopPlayer );
+				if ( !player )
+				{
+					continue;
+				}
+				if ( DistanceSquared( player->currentOrigin, self->currentOrigin ) <= REMOVE_DISTANCE_SQR )
 				{
 					return;
+				}
+
+				if ( (InFOV( self, player, 110, 90 )) ) // generous FOV check
+				{
+					if ( (NPC_ClearLOS( player, self->currentOrigin )) )
+					{
+						return;
+					}
 				}
 			}
 		}

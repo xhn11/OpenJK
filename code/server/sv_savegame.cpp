@@ -31,6 +31,7 @@ along with this program; if not, see <http://www.gnu.org/licenses/>.
 										//	(EF1 behaviour). I should maybe time/date check them though?
 
 #include "server.h"
+#include "../coop/coop_public.h"
 #include "../qcommon/stringed_ingame.h"
 #include "../game/statindex.h"
 #include "../game/weapons.h"
@@ -203,6 +204,11 @@ void SV_LoadGame_f(void)
 		return;
 	}
 
+	if ( Coop_GuestLoadBlocked() )
+	{//coop guest: the host loads, we follow its map (design 23)
+		return;
+	}
+
 	const char *psFilename = Cmd_Argv(1);
 	if (strstr (psFilename, "..") || strstr (psFilename, "/") || strstr (psFilename, "\\") )
 	{
@@ -308,6 +314,11 @@ void SV_SaveGame_f(void)
 	if ( Cmd_Argc() != 2 )
 	{
 		Com_Printf( "USAGE: save <filename>\n" );
+		return;
+	}
+
+	if ( Coop_GuestSaveRequest( Cmd_Argv( 1 ) ) )
+	{//coop guest: only the host saves (design 23), we ask it to
 		return;
 	}
 

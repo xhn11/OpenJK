@@ -100,7 +100,7 @@ void multi_trigger_run( gentity_t *ent )
 		//ent->nextthink = level.time + FRAMETIME;
 		//ent->think = G_FreeEntity;
 	}
-	if( ent->activator && ent->activator->s.number == 0 )
+	if( ent->activator && G_IsPlayer( ent->activator ) )
 	{	// mark the trigger as being touched by the player
 		ent->aimDebounceTime = level.time;
 	}
@@ -191,7 +191,7 @@ void Touch_Multi( gentity_t *self, gentity_t *other, trace_t *trace )
 
 	if ( self->spawnflags & 1 )
 	{
-		if ( other->s.number != 0 )
+		if ( !G_IsPlayer( other ) )	// coop: either player
 		{
 			return;
 		}
@@ -269,7 +269,7 @@ void Touch_Multi( gentity_t *self, gentity_t *other, trace_t *trace )
 
 		//FIXME: do we care about the sniper rifle or not?
 
-		if( other->s.number == 0 && ( other->client->ps.weapon > MAX_PLAYER_WEAPONS || other->client->ps.weapon <= WP_NONE ) )
+		if( G_IsPlayer( other ) && ( other->client->ps.weapon > MAX_PLAYER_WEAPONS || other->client->ps.weapon <= WP_NONE ) )
 		{//don't care about non-player weapons if this is the player
 			return;
 		}

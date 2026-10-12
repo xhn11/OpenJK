@@ -393,7 +393,10 @@ SV_CheckPaused
 ==================
 */
 qboolean SV_CheckPaused( void ) {
-	if ( !cl_paused->integer ) {
+	if ( !cl_paused->integer || Coop_IsLinked() ) {	// coop: a menu on one machine does not stop the game (design 28)
+		if ( sv_paused->integer ) {
+			Cvar_Set( "sv_paused", "0" );
+		}
 		return qfalse;
 	}
 

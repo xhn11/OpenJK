@@ -1,0 +1,267 @@
+// COOP MENU (design 28): host a new or saved game, or join a host. Opened from the main menu.
+{
+	menuDef
+	{
+		name					"coopMenu"
+		fullScreen				1
+		rect					0 0 640 480
+		visible					1
+		focusColor				1 1 1 1
+		descX					320
+		descY					425
+		descScale				.8
+		descColor				.235 .882 .847 1
+		descAlignment			ITEM_ALIGN_CENTER
+
+		onESC
+		{
+			play				"sound/interface/menuroam.wav" ;
+			close				coopMenu ;
+			open				mainMenu
+		}
+
+		itemDef
+		{
+			name				frame_pic
+			style				WINDOW_STYLE_SHADER
+			rect				0 0 640 480
+			background			"gfx/menus/menu1"
+			forecolor			1 1 1 1
+			visible				1
+			decoration
+		}
+
+		itemDef
+		{
+			name				title
+			text				"COOP - 2 PLAYERS"
+			style				WINDOW_STYLE_EMPTY
+			rect				120 60 400 30
+			font				3
+			textscale			1
+			textalign			ITEM_ALIGN_CENTER
+			textalignx			200
+			textstyle			3
+			forecolor			1 1 1 1
+			visible				1
+			decoration
+		}
+
+		// ---------------------------------------------------------------- player
+		itemDef
+		{
+			name				coopname
+			type				ITEM_TYPE_EDITFIELD
+			style				WINDOW_STYLE_EMPTY
+			text				"Name: "
+			descText			"Your name over your head on the partner's screen"
+			cvar				coop_name
+			maxChars			30
+			rect				140 110 360 20
+			font				2
+			textscale			.9
+			textalign			ITEM_ALIGN_LEFT
+			textalignx			0
+			textaligny			0
+			forecolor			1 1 1 1
+			visible				1
+		}
+
+		itemDef
+		{
+			name				cooppassword
+			type				ITEM_TYPE_EDITFIELD
+			style				WINDOW_STYLE_EMPTY
+			text				"Password: "
+			descText			"Optional: the host and the joining player type the same one"
+			cvar				coop_password
+			maxChars			30
+			rect				140 135 360 20
+			font				2
+			textscale			.9
+			textalign			ITEM_ALIGN_LEFT
+			textalignx			0
+			textaligny			0
+			forecolor			1 1 1 1
+			visible				1
+		}
+
+		// ---------------------------------------------------------------- host
+		itemDef
+		{
+			name				hosttitle
+			text				"HOST"
+			style				WINDOW_STYLE_EMPTY
+			rect				140 175 360 20
+			font				3
+			textscale			.9
+			textalign			ITEM_ALIGN_LEFT
+			forecolor			.65 .65 1 1
+			visible				1
+			decoration
+		}
+
+		itemDef
+		{
+			name				hosteasy
+			type				ITEM_TYPE_BUTTON
+			style				WINDOW_STYLE_EMPTY
+			text				"New game - Padawan"
+			descText			"Start the campaign (kejim_post) and wait for the partner, UDP port 29170"
+			rect				160 200 300 20
+			font				2
+			textscale			.9
+			textalign			ITEM_ALIGN_LEFT
+			forecolor			1 1 1 1
+			visible				1
+			action
+			{
+				play			"sound/interface/button1.wav" ;
+				exec			"g_spskill 0; coop_host; map kejim_post" ;
+				close			all
+			}
+		}
+
+		itemDef
+		{
+			name				hostmedium
+			type				ITEM_TYPE_BUTTON
+			style				WINDOW_STYLE_EMPTY
+			text				"New game - Jedi"
+			descText			"Start the campaign (kejim_post) and wait for the partner, UDP port 29170"
+			rect				160 222 300 20
+			font				2
+			textscale			.9
+			textalign			ITEM_ALIGN_LEFT
+			forecolor			1 1 1 1
+			visible				1
+			action
+			{
+				play			"sound/interface/button1.wav" ;
+				exec			"g_spskill 1; coop_host; map kejim_post" ;
+				close			all
+			}
+		}
+
+		itemDef
+		{
+			name				hosthard
+			type				ITEM_TYPE_BUTTON
+			style				WINDOW_STYLE_EMPTY
+			text				"New game - Jedi Knight"
+			descText			"Start the campaign (kejim_post) and wait for the partner, UDP port 29170"
+			rect				160 244 300 20
+			font				2
+			textscale			.9
+			textalign			ITEM_ALIGN_LEFT
+			forecolor			1 1 1 1
+			visible				1
+			action
+			{
+				play			"sound/interface/button1.wav" ;
+				exec			"g_spskill 2; coop_host; map kejim_post" ;
+				close			all
+			}
+		}
+
+		itemDef
+		{
+			name				hostload
+			type				ITEM_TYPE_BUTTON
+			style				WINDOW_STYLE_EMPTY
+			text				"Load a saved game"
+			descText			"Host, then pick a save; the partner gets its saved state from it"
+			rect				160 266 300 20
+			font				2
+			textscale			.9
+			textalign			ITEM_ALIGN_LEFT
+			forecolor			1 1 1 1
+			visible				1
+			action
+			{
+				play			"sound/interface/button1.wav" ;
+				exec			"coop_host" ;
+				close			coopMenu ;
+				open			loadgameMenu
+			}
+		}
+
+		// ---------------------------------------------------------------- join
+		itemDef
+		{
+			name				jointitle
+			text				"JOIN"
+			style				WINDOW_STYLE_EMPTY
+			rect				140 300 360 20
+			font				3
+			textscale			.9
+			textalign			ITEM_ALIGN_LEFT
+			forecolor			.65 .65 1 1
+			visible				1
+			decoration
+		}
+
+		itemDef
+		{
+			name				joinaddr
+			type				ITEM_TYPE_EDITFIELD
+			style				WINDOW_STYLE_EMPTY
+			text				"Host IP: "
+			descText			"The host's address, e.g. 192.168.1.20 or 100.64.0.2:29170"
+			cvar				coop_connectaddr
+			maxChars			60
+			rect				160 325 340 20
+			font				2
+			textscale			.9
+			textalign			ITEM_ALIGN_LEFT
+			textalignx			0
+			textaligny			0
+			forecolor			1 1 1 1
+			visible				1
+		}
+
+		itemDef
+		{
+			name				joinbutton
+			type				ITEM_TYPE_BUTTON
+			style				WINDOW_STYLE_EMPTY
+			text				"Connect"
+			descText			"Join the host's game; you load its map and appear next to Kyle"
+			rect				160 350 300 20
+			font				2
+			textscale			.9
+			textalign			ITEM_ALIGN_LEFT
+			forecolor			1 1 1 1
+			visible				1
+			action
+			{
+				play			"sound/interface/button1.wav" ;
+				exec			"coop_connect" ;
+				close			all
+			}
+		}
+
+		// ---------------------------------------------------------------- back
+		itemDef
+		{
+			name				backbutton
+			type				ITEM_TYPE_BUTTON
+			style				WINDOW_STYLE_EMPTY
+			text				"Back"
+			rect				115 444 130 24
+			font				3
+			textscale			1
+			textalign			ITEM_ALIGN_CENTER
+			textalignx			65
+			textstyle			3
+			forecolor			0.65 0.65 1 1
+			visible				1
+			action
+			{
+				play			"sound/interface/menuroam.wav" ;
+				close			coopMenu ;
+				open			mainMenu
+			}
+		}
+	}
+}

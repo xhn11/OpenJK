@@ -6,6 +6,8 @@ cvar_t		*coop_port, *coop_name, *coop_timeout, *coop_debug, *coop_autotest;
 static cvar_t *coop_role;
 static cvar_t *coop_simLoss, *coop_simLatency, *coop_autotestCount;
 static cvar_t *coop_onlink;
+static cvar_t *coop_password;
+#define COOP_BUILD_ID	__DATE__ " " __TIME__	// coop_link.cpp is rebuilt with the engine: same binary, same id
 
 coopRole_t	Coop_Role( void )		{ return coop.role; }
 qboolean	Coop_IsLinked( void )	{ return (qboolean)( coop.state == COOP_LINK_ACTIVE ); }
@@ -128,6 +130,7 @@ qboolean Coop_LocalMapReady( void ) {
 }
 
 static void Coop_LinkUp( netadr_t from ) {
+	Cvar_Set( "coop_peername", coop.peerName );	// cgame shows it over the partner (design 27)
 	CoopNetchan_Setup( coop.role == COOP_ROLE_HOST ? NS_SERVER : NS_CLIENT, &coop.chan, from );
 	coop.peer = from;
 	coop.state = COOP_LINK_ACTIVE;
@@ -174,10 +177,16 @@ static void Coop_Host_f( void ) {
 }
 
 static void Coop_Connect_f( void ) {
-	if ( Cmd_Argc() != 2 ) {
+	// no argument: the address typed in the Coop menu (coop_connectaddr)
+	const char *target = Cmd_Argc() == 2 ? Cmd_Argv( 1 ) : Cvar_VariableString( "coop_connectaddr" );
+	if ( Cmd_Argc() > 2 || !target[0] ) {
 		Com_Printf( "usage: coop_connect <address[:port]>\n" );
 		return;
 	}
+	char targetBuf[MAX_QPATH];
+	Q_strncpyz( targetBuf, target, sizeof( targetBuf ) );
+	Cvar_Set( "coop_connectaddr", targetBuf );	// remembered for the menu
+	Cmd_TokenizeString( va( "coop_connect %s", targetBuf ) );
 	if ( coop.state != COOP_LINK_IDLE ) {
 		Com_Printf( "COOP: already active, use coop_disconnect first\n" );
 		return;
@@ -217,6 +226,21 @@ static void Coop_Disconnect_f( void ) {
 	Com_Printf( "COOP: stopped\n" );
 }
 
+// bandwidth for coop_status: bytes over the last full second
+static int	coopBytesOut, coopBytesIn, coopRateStart, coopKbpsOut, coopKbpsIn;
+
+static void Coop_CountBytes( int out, int in ) {
+	const int now = Sys_Milliseconds();
+	coopBytesOut += out;
+	coopBytesIn += in;
+	if ( now - coopRateStart >= 1000 ) {
+		coopKbpsOut = coopBytesOut * 8 / ( now - coopRateStart );
+		coopKbpsIn = coopBytesIn * 8 / ( now - coopRateStart );
+		coopBytesOut = coopBytesIn = 0;
+		coopRateStart = now;
+	}
+}
+
 static void Coop_Status_f( void ) {
 	static const char *states[] = { "idle", "listening", "connecting", "active" };
 	Com_Printf( "role %d, state %s, port %d\n", coop.role, states[coop.state], NET_IP_LocalPort() );
@@ -224,6 +248,7 @@ static void Coop_Status_f( void ) {
 		Com_Printf( "peer %s \"%s\", last packet %d ms ago, reliable out %d pending, in %d\n",
 			NET_AdrToString( coop.peer ), coop.peerName, Sys_Milliseconds() - coop.lastReceived,
 			CoopRel_PendingCount( &coop.rel ), coop.rel.inSequence );
+		Com_Printf( "bandwidth out %d kbit/s, in %d kbit/s\n", coopKbpsOut, coopKbpsIn );
 	}
 }
 
@@ -261,6 +286,15 @@ static void Coop_ConnectionlessPacket( netadr_t from, msg_t *msg ) {
 		const int challenge = atoi( Cmd_Argv( 2 ) );
 		if ( proto != COOP_PROTOCOL_VERSION ) {
 			NET_OutOfBandPrint( NS_SERVER, from, "coopReject \"protocol %d, host has %d\"", proto, COOP_PROTOCOL_VERSION );
+			return;
+		}
+		if ( Q_stricmp( Cmd_Argv( 4 ), COOP_BUILD_ID ) ) {	// design 28: both players run the same build
+			NET_OutOfBandPrint( NS_SERVER, from, "coopReject \"different build (host %s, yours %s) - copy the host's game files\"",
+				COOP_BUILD_ID, Cmd_Argv( 4 ) );
+			return;
+		}
+		if ( coop_password->string[0] && strcmp( Cmd_Argv( 5 ), coop_password->string ) ) {
+			NET_OutOfBandPrint( NS_SERVER, from, "coopReject \"wrong password\"" );
 			return;
 		}
 		if ( coop.state == COOP_LINK_ACTIVE ) {
@@ -368,6 +402,7 @@ static void Coop_PacketEvent( netadr_t from, msg_t *msg ) {
 		return;	// out of order, duplicated or a fragment
 	}
 	coop.lastReceived = Sys_Milliseconds();
+	Coop_CountBytes( 0, msg->cursize );
 	Coop_ParsePacket( msg );
 }
 
@@ -423,6 +458,7 @@ static void Coop_SendPacket( qboolean reliableOnly ) {
 		return;
 	}
 	CoopNetchan_Transmit( &coop.chan, msg.cursize, msg.data );
+	Coop_CountBytes( msg.cursize, 0 );
 }
 
 void Coop_FlushNow( void ) {
@@ -466,8 +502,8 @@ void Coop_Frame( void ) {
 			NET_IP_Close();
 			Coop_Reset( COOP_ROLE_NONE, COOP_LINK_IDLE );
 		} else if ( now - coop.lastSent >= COOP_CONNECT_RESEND_MS ) {
-			NET_OutOfBandPrint( NS_CLIENT, coop.peer, "coopConnect %d %d \"%s\"",
-				COOP_PROTOCOL_VERSION, coop.challenge, coop_name->string );
+			NET_OutOfBandPrint( NS_CLIENT, coop.peer, "coopConnect %d %d \"%s\" \"%s\" \"%s\"",
+				COOP_PROTOCOL_VERSION, coop.challenge, coop_name->string, COOP_BUILD_ID, coop_password->string );
 			coop.lastSent = now;
 		}
 		return;
@@ -502,6 +538,8 @@ void Coop_Init( void ) {
 	coop_name		= Cvar_Get( "coop_name", "Padawan", CVAR_ARCHIVE );
 	coop_timeout	= Cvar_Get( "coop_timeout", "20", 0 );
 	coop_debug		= Cvar_Get( "coop_debug", "0", 0 );
+	coop_password	= Cvar_Get( "coop_password", "", 0 );
+	Cvar_Get( "coop_connectaddr", "", CVAR_ARCHIVE );		// the Coop menu's host address	// host: required from the guest; guest: sent to the host
 	coop_autotest	= Cvar_Get( "coop_autotest", "0", 0 );	// >0: send a coop_test payload of that size on link up
 	coop_autotestCount	= Cvar_Get( "coop_autotestCount", "1", 0 );	// packets in a row that carry the coop_autotest payload
 	coop_simLoss		= Cvar_Get( "coop_simLoss", "0", 0 );		// % of outgoing coop UDP packets dropped (testing)
