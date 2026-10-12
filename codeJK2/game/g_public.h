@@ -25,7 +25,7 @@ along with this program; if not, see <http://www.gnu.org/licenses/>.
 #define __G_PUBLIC_H__
 // g_public.h -- game module information visible to server
 
-#define	GAME_API_VERSION	10
+#define	GAME_API_VERSION	11		// 11: coop exports at the end of game_export_t
 
 // entity->svFlags
 // the server does not know how to interpret most of the values
@@ -375,6 +375,8 @@ Ghoul2 Insert End
 
 } game_import_t;
 
+#include "../../code/game/coop_shared.h"
+
 //
 // functions exported by the game subsystem
 //
@@ -430,6 +432,11 @@ typedef struct {
 	struct gentity_s	*gentities;
 	int			gentitySize;
 	int			num_entities;		// current number, <= MAX_GENTITIES
+	// coop (code/game/coop_shared.h); entity numbers are this machine's
+	int			(*Coop_EntityOwner)( int entNum );		// coopOwner_t, COOP_OWNER_NONE for a free slot
+	void		(*Coop_GetEntityExtra)( int entNum, coopEntExtra_t *out );
+	void		(*Coop_ApplyEntity)( int entNum, const entityState_t *es, const playerState_t *ps, const coopEntExtra_t *extra );	// ps NULL: no client
+	void		(*Coop_FreeEntity)( int entNum );
 } game_export_t;
 
 game_export_t *GetGameApi (game_import_t *import);

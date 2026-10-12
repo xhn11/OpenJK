@@ -118,3 +118,31 @@ void G_CoopEnts_f( void ) {
 	gi.Printf( "COOP: entities %d (ours %d, other %d, clients %d)\n", total, ours, total - ours, clients );
 }
 
+
+gentity_t *G_SpawnAtNum( int num ) {
+	if ( num < MAX_CLIENTS || num >= ENTITYNUM_MAX_NORMAL || g_entities[num].inuse ) {
+		return NULL;
+	}
+	gentity_t *e = &g_entities[num];
+	g_coopSpawningReplica = qtrue;
+	G_InitGentity( e );		// owner: host (G_CoopEntityInit)
+	g_coopSpawningReplica = qfalse;
+	if ( num >= globals.num_entities ) {
+		globals.num_entities = num + 1;
+	}
+	return e;
+}
+
+void G_CoopEntInfo_f( void ) {
+	const int num = atoi( gi.argv( 1 ) );
+	if ( gi.argc() != 2 || num < 0 || num >= MAX_GENTITIES ) {
+		gi.Printf( "usage: coop_entinfo <entity number>\n" );
+		return;
+	}
+	coopEntExtra_t ex;
+	G_Coop_GetEntityExtra( num, &ex );
+	const gentity_t *ent = &g_entities[num];
+	gi.Printf( "COOP: entinfo %d owner %d class %s npc \"%s\" linked %d portal %d origin %.0f %.0f %.0f\n",
+		num, G_Coop_EntityOwner( num ), ex.inuse ? ex.classname : "(free)", ex.npcType, ex.linked, ex.areaPortalOpen,
+		ent->currentOrigin[0], ent->currentOrigin[1], ent->currentOrigin[2] );
+}

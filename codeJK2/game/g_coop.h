@@ -32,3 +32,10 @@ int			G_CoopPortalCount( int entNum );
 
 void		G_CoopEnts_f( void );									// console: coop_ents
 
+// replicas (g_coop.cpp, g_coop_replica.cpp)
+gentity_t	*G_SpawnAtNum( int num );								// a replica on exactly this free slot, owned by the host
+int			G_Coop_EntityOwner( int entNum );						// game exports, see code/game/coop_shared.h
+void		G_Coop_GetEntityExtra( int entNum, coopEntExtra_t *out );
+void		G_Coop_ApplyEntity( int entNum, const entityState_t *es, const playerState_t *ps, const coopEntExtra_t *ex );
+void		G_Coop_FreeEntity( int entNum );
+void		G_CoopEntInfo_f( void );								// console: coop_entinfo <num>

@@ -81,6 +81,7 @@ set(JK2SPGameGameFiles
 	"${JK2SPDir}/game/g_cmds.cpp"
 	"${JK2SPDir}/game/g_combat.cpp"
 	"${JK2SPDir}/game/g_coop.cpp"
+	"${JK2SPDir}/game/g_coop_replica.cpp"
 	"${SPDir}/coop/coop_entnum.cpp"
 	"${JK2SPDir}/game/g_functions.cpp"
 	"${JK2SPDir}/game/g_fx.cpp"
