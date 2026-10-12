@@ -27,12 +27,13 @@ typedef struct {
 	int				lastReceived;
 	char			peerName[64];
 	coopReliable_t	rel;
+	int				testPending;		// bytes of a coop_test payload to send in the next packet
 } coopLink_t;
 
 extern coopLink_t	coop;
-extern cvar_t		*coop_port, *coop_name, *coop_timeout, *coop_debug;
+extern cvar_t		*coop_port, *coop_name, *coop_timeout, *coop_debug, *coop_autotest;
 
-enum { coop_bad, coop_eof, coop_reliable, coop_snapshot /*M3*/, coop_snapack /*M3*/, coop_migrate /*M6*/ };
+enum { coop_bad, coop_eof, coop_reliable, coop_snapshot /*M3*/, coop_snapack /*M3*/, coop_migrate /*M6*/, coop_test /*debug: fragmentation self-test*/ };
 
 void		Coop_OnLinkUp( void );
 void		Coop_OnLinkDown( const char *reason );

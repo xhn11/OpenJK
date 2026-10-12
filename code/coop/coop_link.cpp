@@ -2,7 +2,7 @@
 
 
 coopLink_t	coop;
-cvar_t		*coop_port, *coop_name, *coop_timeout, *coop_debug;
+cvar_t		*coop_port, *coop_name, *coop_timeout, *coop_debug, *coop_autotest;
 static cvar_t *coop_role;
 
 coopRole_t	Coop_Role( void )		{ return coop.role; }
@@ -45,6 +45,69 @@ void Coop_AddReliable( const char *cmd ) {
 	}
 }
 
+// ---------------------------------------------------------------- fragmentation self-test
+
+#define COOP_TEST_MAX_BYTES		( COOP_MAX_MSGLEN - 1024 )
+
+static int Coop_TestClamp( int bytes ) {
+	return bytes < 1 ? 1 : ( bytes > COOP_TEST_MAX_BYTES ? COOP_TEST_MAX_BYTES : bytes );
+}
+
+static byte Coop_TestByte( int i ) {
+	return (byte)( ( i * 31 + 7 ) & 0xff );
+}
+
+static unsigned Coop_TestMix( unsigned sum, byte b ) {
+	return sum * 33 + b;
+}
+
+// coop_test: long length, long checksum, length bytes of a fixed pattern
+static void Coop_WriteTest( msg_t *msg ) {
+	const int length = coop.testPending;
+	if ( !length || msg->cursize + 9 + length + 1 > msg->maxsize ) {
+		return;	// nothing to send, or no room next to the reliables: try the next packet
+	}
+	unsigned sum = 5381;
+	for ( int i = 0; i < length; i++ ) {
+		sum = Coop_TestMix( sum, Coop_TestByte( i ) );
+	}
+	MSG_WriteByte( msg, coop_test );
+	MSG_WriteLong( msg, length );
+	MSG_WriteLong( msg, (int)sum );
+	byte *data = (byte *)MSG_GetSpace( msg, length );
+	for ( int i = 0; i < length; i++ ) {
+		data[i] = Coop_TestByte( i );
+	}
+	coop.testPending = 0;
+	Com_Printf( "COOP: test payload %d bytes sent\n", length );
+}
+
+// returns qfalse if the rest of the packet cannot be parsed
+static qboolean Coop_ReadTest( msg_t *msg ) {
+	const int length = MSG_ReadLong( msg );
+	const unsigned checksum = (unsigned)MSG_ReadLong( msg );
+	if ( length < 0 || length > msg->cursize - msg->readcount ) {
+		Com_Printf( "COOP: test payload corrupt (%d bytes)\n", length );
+		return qfalse;
+	}
+	const byte *data = msg->data + msg->readcount;
+	msg->readcount += length;
+	unsigned sum = 5381;
+	qboolean ok = qtrue;
+	for ( int i = 0; i < length; i++ ) {
+		if ( data[i] != Coop_TestByte( i ) ) {
+			ok = qfalse;
+		}
+		sum = Coop_TestMix( sum, data[i] );
+	}
+	if ( ok && sum == checksum ) {
+		Com_Printf( "COOP: test payload %d bytes ok\n", length );
+	} else {
+		Com_Printf( "COOP: test payload corrupt (%d bytes)\n", length );
+	}
+	return qtrue;
+}
+
 static void Coop_LinkUp( netadr_t from ) {
 	CoopNetchan_Setup( coop.role == COOP_ROLE_HOST ? NS_SERVER : NS_CLIENT, &coop.chan, from );
 	coop.peer = from;
@@ -53,6 +116,9 @@ static void Coop_LinkUp( netadr_t from ) {
 	coop.lastSent = 0;
 	Com_Printf( "COOP: link up (%s, peer \"%s\")\n", NET_AdrToString( from ), coop.peerName );
 	Coop_AddReliable( va( "hello \"%s\"", coop_name->string ) );
+	if ( coop_autotest->integer > 0 ) {
+		coop.testPending = Coop_TestClamp( coop_autotest->integer );
+	}
 	Coop_OnLinkUp();
 }
 
@@ -137,6 +203,18 @@ static void Coop_Say_f( void ) {
 	Coop_AddReliable( va( "say \"%s\"", Cmd_Args() ) );
 }
 
+static void Coop_SendTest_f( void ) {
+	if ( Cmd_Argc() != 2 ) {
+		Com_Printf( "usage: coop_sendtest <bytes>\n" );
+		return;
+	}
+	if ( coop.state != COOP_LINK_ACTIVE ) {
+		Com_Printf( "COOP: not connected\n" );
+		return;
+	}
+	coop.testPending = Coop_TestClamp( atoi( Cmd_Argv( 1 ) ) );
+}
+
 // ---------------------------------------------------------------- packets
 
 static void Coop_ConnectionlessPacket( netadr_t from, msg_t *msg ) {
@@ -215,6 +293,10 @@ static void Coop_ParsePacket( msg_t *msg ) {
 			if ( CoopRel_Accept( &coop.rel, seq ) ) {
 				Coop_ExecuteReliable( text );
 			}
+		} else if ( cmd == coop_test ) {
+			if ( !Coop_ReadTest( msg ) ) {
+				return;
+			}
 		} else if ( !Coop_ParsePayload( cmd, msg ) ) {
 			Coop_CloseLink( va( "bad packet command %d", cmd ), qtrue );
 			return;
@@ -264,7 +346,8 @@ static void Coop_SendPacket( void ) {
 		MSG_WriteLong( &msg, seq );
 		MSG_WriteString( &msg, cmd );
 	}
-	Coop_WritePayload( &msg );
+	Coop_WriteTest( &msg );
+	Coop_WritePayload( &msg );	// must leave 1 byte for coop_eof
 	MSG_WriteByte( &msg, coop_eof );
 	CoopNetchan_Transmit( &coop.chan, msg.cursize, msg.data );
 	coop.lastSent = Sys_Milliseconds();
@@ -302,12 +385,14 @@ void Coop_Init( void ) {
 	coop_name		= Cvar_Get( "coop_name", "Padawan", CVAR_ARCHIVE );
 	coop_timeout	= Cvar_Get( "coop_timeout", "20", 0 );
 	coop_debug		= Cvar_Get( "coop_debug", "0", 0 );
+	coop_autotest	= Cvar_Get( "coop_autotest", "0", 0 );	// >0: send a coop_test payload of that size on link up
 	coop_role		= Cvar_Get( "coop_role", "0", CVAR_ROM );
 	Cmd_AddCommand( "coop_host", Coop_Host_f );
 	Cmd_AddCommand( "coop_connect", Coop_Connect_f );
 	Cmd_AddCommand( "coop_disconnect", Coop_Disconnect_f );
 	Cmd_AddCommand( "coop_status", Coop_Status_f );
 	Cmd_AddCommand( "coop_say", Coop_Say_f );
+	Cmd_AddCommand( "coop_sendtest", Coop_SendTest_f );
 	Coop_Reset( COOP_ROLE_NONE, COOP_LINK_IDLE );
 }
 
