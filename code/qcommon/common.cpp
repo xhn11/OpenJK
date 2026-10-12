@@ -30,6 +30,7 @@ along with this program; if not, see <http://www.gnu.org/licenses/>.
 #include "stringed_ingame.h"
 #include "game_version.h"
 #include "../shared/sys/sys_local.h"
+#include "../coop/coop_public.h"
 #if defined(_WIN32)
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -885,6 +886,10 @@ int Com_EventLoop( void ) {
 				}
 			}
 
+			while ( NET_IP_GetPacket( &evFrom, &buf ) ) {
+				Coop_PacketEvent( evFrom, &buf );
+			}
+
 			return ev.evTime;
 		}
 
@@ -1178,6 +1183,7 @@ void Com_Init( char *commandLine ) {
 		Netchan_Init( Com_Milliseconds() & 0xffff );	// pick a port value that should be nice and random
 //	VM_Init();
 		SV_Init();
+		Coop_Init();
 
 		CL_Init();
 
@@ -1450,6 +1456,7 @@ void Com_Frame( void ) {
 		}
 
 		SV_Frame (msec, fractionMsec);
+		Coop_Frame();
 
 
 		//
@@ -1592,6 +1599,7 @@ Com_Shutdown
 =================
 */
 void Com_Shutdown (void) {
+	Coop_Shutdown();
 	CM_ClearMap();
 
 	if (logfile) {
