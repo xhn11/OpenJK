@@ -30,6 +30,7 @@ along with this program; if not, see <http://www.gnu.org/licenses/>.
 #include "g_local.h"
 #include "../cgame/cg_local.h"
 #include "g_functions.h"
+#include "g_coop.h"
 
 void GEntity_ThinkFunc(gentity_t *self)
 {
@@ -204,6 +205,10 @@ void GEntity_BlockedFunc(gentity_t *self, gentity_t *other)
 
 void GEntity_TouchFunc(gentity_t *self, gentity_t *other, trace_t *trace)
 {
+	if ( G_CoopBlockTouch( self ) )
+	{//coop guest: host entities react to touches on the host (M5)
+		return;
+	}
 //#define TOUCHCASE(blah) case touchF_ ## blah: blah(self,other,trace); OutputDebugString(va("%s\n",#blah));break;
 #define TOUCHCASE(blah) case touchF_ ## blah: blah(self,other,trace); break;
 
@@ -239,6 +244,10 @@ void GEntity_UseFunc(gentity_t *self, gentity_t *other, gentity_t *activator)
 {
 	if ( !self || (self->svFlags&SVF_INACTIVE) )
 	{
+		return;
+	}
+	if ( G_CoopBlockUse( self ) )
+	{//coop guest: using host entities goes through the host (M5)
 		return;
 	}
 //#define USECASE(blah) case useF_ ## blah: blah(self,other,activator); OutputDebugString(va("%s\n",#blah));break;

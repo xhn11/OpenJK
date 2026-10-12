@@ -29,6 +29,7 @@ along with this program; if not, see <http://www.gnu.org/licenses/>.
 #include "Q3_Interface.h"
 #include "g_roff.h"
 #include "g_icarus.h"
+#include "g_coop.h"
 
 ICARUS_Instance		*iICARUS;
 bufferlist_t		ICARUS_BufferList;
@@ -91,6 +92,11 @@ int ICARUS_RunScript( gentity_t *ent, const char *name )
 {
 	char *buf;
 	int len;
+
+	if ( g_coopMode == COOP_MODE_GUEST )
+	{//coop: scripts run on the host only (design 2)
+		return false;
+	}
 
 	//Make sure the caller is valid
 	if ( ent->sequencer == NULL )

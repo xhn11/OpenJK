@@ -787,6 +787,7 @@ extern "C" Q_EXPORT game_export_t* QDECL GetGameAPI( game_import_t *import ) {
 	gameinfo_import_t	gameinfo_import;
 
 	gi = *import;
+	G_CoopHookImports();
 
 	globals.apiversion = GAME_API_VERSION;
 	globals.Init = InitGame;
@@ -1318,6 +1319,11 @@ void G_RunFrame( int levelTime ) {
 		ents_inuse++;
 		ent = &g_entities[i];
 
+		if ( !G_CoopRunsLocally( ent ) )
+		{//coop guest: the host simulates this entity (think, AI, ICARUS, movers, missiles, events), snapshots replay it
+			continue;
+		}
+
 		// clear events that are too old
 		if ( level.time - ent->eventTime > EVENT_VALID_MSEC ) {
 			if ( ent->s.event ) {
@@ -1441,7 +1447,10 @@ void G_RunFrame( int levelTime ) {
 	NAV_ShowDebugInfo();
 	NPC_ShowDebugInfo();
 
-	G_DynamicMusicUpdate();
+	if ( g_coopMode != COOP_MODE_GUEST )
+	{//the guest plays the host's music state (CS_DYNAMIC_MUSIC_STATE)
+		G_DynamicMusicUpdate();
+	}
 
 #if	AI_TIMERS
 	AITime -= navTime;

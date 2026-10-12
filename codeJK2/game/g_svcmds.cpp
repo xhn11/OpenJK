@@ -25,6 +25,7 @@ along with this program; if not, see <http://www.gnu.org/licenses/>.
 #include "g_local.h"
 #include "g_icarus.h"
 #include "wp_saber.h"
+#include "g_coop.h"
 
 extern void Q3_SetViewEntity(int entID, const char *name);
 extern qboolean G_ClearViewEntity( gentity_t *ent );
@@ -554,6 +555,7 @@ static int svcmdcmp( const void *a, const void *b ) {
 
 // FIXME some of these should be made CMD_ALIVE too!
 static svcmd_t svcmds[] = {
+	{ "coop_ents",					G_CoopEnts_f,								CMD_NONE },
 	{ "entitylist",					Svcmd_EntityList_f,							CMD_NONE },
 	{ "game_memory",				Svcmd_GameMem_f,							CMD_NONE },
 

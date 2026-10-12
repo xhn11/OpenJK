@@ -34,6 +34,7 @@ along with this program; if not, see <http://www.gnu.org/licenses/>.
 #include "g_icarus.h"
 #include "wp_saber.h"
 #include "Q3_Interface.h"
+#include "g_coop.h"
 #include "../../code/qcommon/strippublic.h"
 
 extern	cvar_t	*g_debugDamage;
@@ -4795,6 +4796,10 @@ void G_Damage( gentity_t *targ, gentity_t *inflictor, gentity_t *attacker, vec3_
 	vec3_t		newDir;
 	qboolean	alreadyDead = qfalse;
 
+	if ( G_CoopBlockDamage( targ ) )
+	{//coop: only the owner of targ applies damage (M5 sends it there as coop_hit)
+		return;
+	}
 	if (!targ->takedamage) {
 		return;
 	}

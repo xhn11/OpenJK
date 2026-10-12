@@ -711,6 +711,7 @@ void G_InitGentity( gentity_t *e )
 	e->waypoint				= WAYPOINT_NONE;
 	e->lastWaypoint			= WAYPOINT_NONE;
 	e->lastValidWaypoint	= WAYPOINT_NONE;
+	G_CoopEntityInit( e );
 }
 
 /*
