@@ -15,6 +15,7 @@ void		G_CoopHookImports( void );								// GetGameAPI, after gi = *import
 
 // ownership (design 2, 3, 6): the owner simulates an entity, the other machine only replays it
 int			G_CoopOwner( const gentity_t *ent );					// COOP_MODE_HOST or COOP_MODE_GUEST
+int			G_CoopPartnerMode( void );								// the other machine's mode
 qboolean	G_CoopOwnsEnt( const gentity_t *ent );					// solo: always qtrue
 void		G_CoopSetOwner( gentity_t *ent, int owner );
 void		G_CoopEntityInit( gentity_t *ent );						// G_InitGentity: owner by who allocates, portal count 0
@@ -39,6 +40,12 @@ void		G_Coop_GetEntityExtra( int entNum, coopEntExtra_t *out );
 void		G_Coop_ApplyEntity( int entNum, const entityState_t *es, const playerState_t *ps, const coopEntExtra_t *ex );
 void		G_Coop_FreeEntity( int entNum );
 void		G_CoopEntInfo_f( void );								// console: coop_entinfo <num>
+// game commands to the partner's game (code/coop: reliable "g <text>")
+int			G_CoopWireNum( int entNum );							// our entity number in the partner's numbering
+qboolean	G_CoopPartnerInWorld( void );
+void		G_CoopSend( const char *fmt, ... );						// "<name> <args>", dropped when the partner is not here
+void		G_Coop_GameCommand( void );								// game export: argv(1) is the name
+void		G_CoopGTest_f( void );									// console: coop_gtest <text>
 // replica motion (design 4, 16)
 void		G_CoopRunReplica( gentity_t *ent );						// G_RunFrame on the guest, every host entity
 void		G_CoopRunReplicaMover( gentity_t *ent );				// g_mover.cpp: a host mover pushes only our entities

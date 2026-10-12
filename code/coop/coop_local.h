@@ -5,7 +5,7 @@
 #include "coop_reliable.h"
 #include "coop_netchan.h"
 
-#define COOP_PROTOCOL_VERSION		6			// 6: coop_view
+#define COOP_PROTOCOL_VERSION		7			// 6: coop_view, 7: snapshots both ways, game commands
 #define COOP_DEFAULT_PORT			29170
 #define COOP_CONNECT_RESEND_MS		1000
 #define COOP_CONNECT_TIMEOUT_MS		15000

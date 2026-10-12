@@ -71,7 +71,48 @@ static qboolean G_CoopReplicaMismatch( const gentity_t *ent, const coopEntExtra_
 	return qfalse;
 }
 
+extern vec3_t	playerMins, playerMaxs;
+
+// Entity 1: the partner's player (design 2). A client like ours, built from the partner's NPC type
+// ("kyle", M8: "jan" / "luke") for model, animations and sounds; no ucmds, no think: every snapshot
+// places it. NPC_ParseParms works without ent->NPC, so the puppet is no NPC for the AI.
+static gentity_t *G_CoopSpawnPuppet( const coopEntExtra_t *ex ) {
+	gentity_t *ent = &g_entities[1];
+	G_InitGentity( ent );
+	ent->client = &level.clients[1];
+	memset( ent->client, 0, sizeof( *ent->client ) );
+	ent->client->ps.clientNum = 1;
+	ent->s.eType = ET_PLAYER;
+	ent->classname = "player";
+	const char *type = ex->npcType[0] ? ex->npcType : "kyle";
+	ent->NPC_type = G_NewString( type );
+	ent->weaponModel = -1;
+	ent->playerModel = -1;
+	if ( !NPC_ParseParms( ent->NPC_type, ent ) ) {
+		gi.Printf( "COOP: cannot build the partner as %s\n", type );
+		G_FreeEntity( ent );
+		return NULL;
+	}
+	ent->targetname = ent->script_targetname = NULL;	// scripts name Kyle, not the partner (M8 names it)
+	ent->client->playerTeam = TEAM_PLAYER;
+	ent->client->enemyTeam = TEAM_ENEMY;
+	ent->takedamage = qtrue;
+	ent->flags &= ~FL_NOTARGET;
+	ent->svFlags &= ~SVF_NPC;
+	VectorCopy( playerMins, ent->mins );
+	VectorCopy( playerMaxs, ent->maxs );
+	ent->client->crouchheight = CROUCH_MAXS_2;
+	ent->client->standheight = DEFAULT_MAXS_2;
+	ent->client->renderInfo.lookTarget = ENTITYNUM_NONE;
+	Q_strncpyz( ent->client->clientInfo.name, "partner", sizeof( ent->client->clientInfo.name ) );
+	gi.Printf( "COOP: partner puppet ready (%s)\n", type );
+	return ent;
+}
+
 static gentity_t *G_CoopSpawnReplica( int num, const coopEntExtra_t *ex ) {
+	if ( num == 1 ) {
+		return G_CoopSpawnPuppet( ex );
+	}
 	gentity_t *ent = G_SpawnAtNum( num );
 	if ( !ent ) {
 		return NULL;
@@ -145,14 +186,21 @@ static void G_CoopReplicaWeaponModel( gentity_t *ent, int oldWeapon ) {
 }
 
 void G_Coop_ApplyEntity( int entNum, const entityState_t *es, const playerState_t *ps, const coopEntExtra_t *ex ) {
-	if ( g_coopMode != COOP_MODE_GUEST || entNum < MAX_CLIENTS || entNum >= ENTITYNUM_MAX_NORMAL ) {
-		return;		// M3: only the guest replays, and not the players (M4)
+	if ( g_coopMode == COOP_MODE_SOLO || entNum < 1 || entNum >= ENTITYNUM_MAX_NORMAL ) {
+		return;		// entity 0 is always our own player
 	}
 	gentity_t *ent = &g_entities[entNum];
-	if ( ent->inuse && G_CoopOwnsEnt( ent ) ) {
+	if ( entNum >= MAX_CLIENTS && ent->inuse && G_CoopOwnsEnt( ent ) ) {
 		// the guest allocates its own entities top-down (code/coop/coop_entnum.h); when the map is nearly
-		// full the host can reach the same slot. The host's entity wins, the guest's local one goes.
+		// full both can reach the same slot. The host's entity wins, the guest's local one goes.
+		if ( g_coopMode == COOP_MODE_HOST ) {
+			return;
+		}
 		gi.Printf( "COOP: entity %d taken over by the host (%s -> %s)\n", entNum, ent->classname, ex->classname );
+		G_FreeEntity( ent );
+	}
+	if ( entNum < MAX_CLIENTS && ent->inuse && ex->npcType[0] && Q_stricmp( ent->NPC_type ? ent->NPC_type : "", ex->npcType ) ) {
+		gi.Printf( "COOP: partner changed to %s\n", ex->npcType );		// M8: Jan <-> Luke
 		G_FreeEntity( ent );
 	}
 	if ( ent->inuse && G_CoopReplicaMismatch( ent, ex ) ) {
@@ -209,11 +257,14 @@ void G_Coop_ApplyEntity( int entNum, const entityState_t *es, const playerState_
 }
 
 void G_Coop_FreeEntity( int entNum ) {
-	if ( g_coopMode != COOP_MODE_GUEST || entNum < MAX_CLIENTS || entNum >= ENTITYNUM_MAX_NORMAL ) {
+	if ( g_coopMode == COOP_MODE_SOLO || entNum < 1 || entNum >= ENTITYNUM_MAX_NORMAL ) {
 		return;
 	}
 	gentity_t *ent = &g_entities[entNum];
 	if ( ent->inuse && !G_CoopOwnsEnt( ent ) ) {
+		if ( entNum == 1 ) {
+			gi.Printf( "COOP: partner puppet removed\n" );
+		}
 		G_FreeEntity( ent );
 	}
 }

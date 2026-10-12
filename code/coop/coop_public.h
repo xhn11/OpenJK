@@ -18,3 +18,5 @@ void		Coop_ConfigstringChanged( int index );			// SV_SetConfigstring: index got 
 qboolean	Coop_GuestAdvanceTime( int frameMsec );			// SV_Frame: guest time follows the host's snapshots; qfalse = vanilla
 void		Coop_ForwardServerCommand( int clientNum, const char *cmd );	// SV_GameSendServerCommand: host -> guest too
 qboolean	Coop_PeerViewOrigin( vec3_t org );				// SV_BuildClientSnapshot: the partner's eyes (design 8)
+void		Coop_SendGameCommand( const char *text );		// game import: reliable "g <text>" to the partner's game
+int			Coop_PartnerInWorld( void );					// game import: the partner plays in our map

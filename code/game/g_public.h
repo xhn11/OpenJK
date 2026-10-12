@@ -26,7 +26,7 @@ along with this program; if not, see <http://www.gnu.org/licenses/>.
 // g_public.h -- game module information visible to server
 
 #ifdef JK2_MODE
-#define	GAME_API_VERSION	11		// 11: coop exports at the end of game_export_t
+#define	GAME_API_VERSION	12		// 11: coop exports at the end of game_export_t, 12: coop game commands
 #else
 #define	GAME_API_VERSION	10
 #endif
@@ -387,6 +387,11 @@ Ghoul2 Insert End
 */
 
 
+#ifdef JK2_MODE
+	// coop (code/game/coop_shared.h)
+	void		(*Coop_SendGameCommand)( const char *text );	// reliable, in order; the partner's game gets it in Coop_GameCommand
+	int			(*Coop_PartnerInWorld)( void );				// the partner plays in this map right now
+#endif
 } game_import_t;
 
 #ifdef JK2_MODE
@@ -451,6 +456,7 @@ typedef struct {
 	void		(*Coop_GetEntityExtra)( int entNum, coopEntExtra_t *out );
 	void		(*Coop_ApplyEntity)( int entNum, const entityState_t *es, const playerState_t *ps, const coopEntExtra_t *extra );	// ps NULL: no client
 	void		(*Coop_FreeEntity)( int entNum );
+	void		(*Coop_GameCommand)( void );					// a Coop_SendGameCommand from the partner, tokenized (argc/argv)
 #endif
 } game_export_t;
 

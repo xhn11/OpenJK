@@ -1049,6 +1049,10 @@ void SV_InitGameProgs (void) {
 	import.WE_IsShaking = SV_WE_IsShaking;
 	import.WE_AddWeatherZone = SV_WE_AddWeatherZone;
 	import.WE_SetTempGlobalFogColor = SV_WE_SetTempGlobalFogColor;
+#ifdef JK2_MODE
+	import.Coop_SendGameCommand = Coop_SendGameCommand;
+	import.Coop_PartnerInWorld = Coop_PartnerInWorld;
+#endif
 
 #ifdef JK2_MODE
 	const char *gamename = "jospgame";

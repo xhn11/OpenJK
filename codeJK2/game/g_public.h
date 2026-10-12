@@ -25,7 +25,7 @@ along with this program; if not, see <http://www.gnu.org/licenses/>.
 #define __G_PUBLIC_H__
 // g_public.h -- game module information visible to server
 
-#define	GAME_API_VERSION	11		// 11: coop exports at the end of game_export_t
+#define	GAME_API_VERSION	12		// 11: coop exports at the end of game_export_t, 12: coop game commands
 
 // entity->svFlags
 // the server does not know how to interpret most of the values
@@ -373,6 +373,9 @@ Ghoul2 Insert End
 */
 
 
+	// coop (code/game/coop_shared.h)
+	void		(*Coop_SendGameCommand)( const char *text );	// reliable, in order; the partner's game gets it in Coop_GameCommand
+	int			(*Coop_PartnerInWorld)( void );				// the partner plays in this map right now
 } game_import_t;
 
 #include "../../code/game/coop_shared.h"
@@ -437,6 +440,7 @@ typedef struct {
 	void		(*Coop_GetEntityExtra)( int entNum, coopEntExtra_t *out );
 	void		(*Coop_ApplyEntity)( int entNum, const entityState_t *es, const playerState_t *ps, const coopEntExtra_t *extra );	// ps NULL: no client
 	void		(*Coop_FreeEntity)( int entNum );
+	void		(*Coop_GameCommand)( void );					// a Coop_SendGameCommand from the partner, tokenized (argc/argv)
 } game_export_t;
 
 game_export_t *GetGameApi (game_import_t *import);

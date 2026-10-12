@@ -557,6 +557,7 @@ static int svcmdcmp( const void *a, const void *b ) {
 static svcmd_t svcmds[] = {
 	{ "coop_ents",					G_CoopEnts_f,								CMD_NONE },
 	{ "coop_entinfo",				G_CoopEntInfo_f,							CMD_NONE },
+	{ "coop_gtest",					G_CoopGTest_f,								CMD_NONE },
 	{ "entitylist",					Svcmd_EntityList_f,							CMD_NONE },
 	{ "game_memory",				Svcmd_GameMem_f,							CMD_NONE },
 

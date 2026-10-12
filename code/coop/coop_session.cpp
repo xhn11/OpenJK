@@ -69,6 +69,21 @@ qboolean Coop_GuestInWorld( void ) {
 		&& Coop_LocalMapReady() && !Q_stricmp( sv_mapname->string, sess.mapName ) );
 }
 
+int Coop_PartnerInWorld( void ) {
+	return coop.role == COOP_ROLE_HOST ? Coop_HostGuestInWorld() : Coop_GuestInWorld();
+}
+
+void Coop_SendGameCommand( const char *text ) {
+	if ( !Coop_PartnerInWorld() ) {
+		return;
+	}
+	if ( (int)strlen( text ) + 2 > COOP_MAX_WIRE_CMD_LEN || Coop_ReliableFree() < 4 ) {
+		Com_Printf( "COOP: game command dropped (%s): %s\n", Coop_ReliableFree() < 4 ? "queue full" : "too long", text );
+		return;
+	}
+	Coop_AddReliable( va( "g %s", text ) );
+}
+
 qboolean Coop_HostGuestInWorld( void ) {
 	return (qboolean)( coop.role == COOP_ROLE_HOST && coop.state == COOP_LINK_ACTIVE && sess.guestReadyGen != 0
 		&& sess.guestReadyGen == coopHostMapGen && Coop_LocalMapRunning() );
@@ -189,7 +204,15 @@ qboolean Coop_ExecuteReliableCmd( const char *cmd ) {
 		}
 		return qtrue;
 	}
-	(void)cmd;		// the raw text is needed from Task 14 (svcmd)
+	if ( !Q_stricmp( c, "g" ) ) {
+		// a game command from the partner's game (Coop_SendGameCommand); argv(0) is "g"
+#ifdef JK2_MODE
+		if ( Coop_PartnerInWorld() && ge && ge->Coop_GameCommand ) {
+			ge->Coop_GameCommand();
+		}
+#endif
+		return qtrue;
+	}
 	return qfalse;	// Coop_ExecuteReliable logs unknown commands with coop_debug 1
 }
 

@@ -34,6 +34,10 @@ void G_CoopSpawnRange( int *first, int *lastExclusive, qboolean *topDown ) {
 	*topDown = (qboolean)Coop_SpawnTopDown( g_coopMode, spawning ? 1 : 0 );
 }
 
+int G_CoopPartnerMode( void ) {
+	return g_coopMode == COOP_MODE_HOST ? COOP_MODE_GUEST : COOP_MODE_HOST;
+}
+
 static int G_CoopIndex( const gentity_t *ent ) {
 	return (int)( ent - g_entities );
 }
@@ -59,10 +63,15 @@ void G_CoopEntityInit( gentity_t *ent ) {
 	if ( n < MAX_CLIENTS ) {
 		return;	// set in G_CoopInitGame
 	}
-	// map entities spawn identically on both machines and belong to the host; so do replicas.
-	// Whatever the guest allocates while playing (its missiles, temp entities) is its own.
-	const qboolean guestOwn = (qboolean)( g_coopMode == COOP_MODE_GUEST && !spawning && !g_coopSpawningReplica );
-	g_coopOwner[n] = (signed char)( guestOwn ? COOP_MODE_GUEST : COOP_MODE_HOST );
+	// map entities spawn identically on both machines and belong to the host. Whatever a machine
+	// allocates while playing (missiles, temp entities) is its own; replicas belong to the partner.
+	if ( g_coopMode == COOP_MODE_SOLO || spawning ) {
+		g_coopOwner[n] = COOP_MODE_HOST;
+	} else if ( g_coopSpawningReplica ) {
+		g_coopOwner[n] = (signed char)G_CoopPartnerMode();
+	} else {
+		g_coopOwner[n] = (signed char)g_coopMode;
+	}
 }
 
 qboolean G_CoopIsPhysicalTrigger( const gentity_t *ent ) {
@@ -162,4 +171,57 @@ void G_CoopSetPortalCount( gentity_t *ent, int count ) {
 	for ( ; diff < 0; diff++ ) {
 		G_CoopAdjustAreaPortal( ent, qfalse );
 	}
+}
+
+// ---------------------------------------------------------------- game commands between the two games
+// G_CoopSend writes "<name> <args>" to the partner's game (reliable, in order); there the engine
+// tokenizes it with argv(0) = "g" and calls G_Coop_GameCommand. Entity numbers go out in the
+// partner's numbering: G_CoopWireNum swaps 0 <-> 1.
+
+int G_CoopWireNum( int entNum ) {
+	return entNum == 0 ? 1 : entNum == 1 ? 0 : entNum;
+}
+
+qboolean G_CoopPartnerInWorld( void ) {
+	return (qboolean)( g_coopMode != COOP_MODE_SOLO && gi.Coop_PartnerInWorld && gi.Coop_PartnerInWorld() );
+}
+
+void G_CoopSend( const char *fmt, ... ) {
+	if ( !G_CoopPartnerInWorld() ) {
+		return;
+	}
+	va_list	argptr;
+	char	text[1024];
+	va_start( argptr, fmt );
+	Q_vsnprintf( text, sizeof( text ), fmt, argptr );
+	va_end( argptr );
+	gi.Coop_SendGameCommand( text );
+}
+
+typedef struct {
+	const char	*name;
+	void		( *fn )( void );
+} coopGameCmd_t;
+
+static void G_CoopCmd_Echo( void ) {
+	gi.Printf( "COOP: game command echo %s\n", gi.argv( 2 ) );
+}
+
+static const coopGameCmd_t coopGameCmds[] = {
+	{ "echo", G_CoopCmd_Echo },
+};
+
+void G_Coop_GameCommand( void ) {
+	const char *name = gi.argv( 1 );
+	for ( size_t i = 0; i < ARRAY_LEN( coopGameCmds ); i++ ) {
+		if ( !Q_stricmp( name, coopGameCmds[i].name ) ) {
+			coopGameCmds[i].fn();
+			return;
+		}
+	}
+	gi.Printf( "COOP: unknown game command %s\n", name );
+}
+
+void G_CoopGTest_f( void ) {
+	G_CoopSend( "echo \"%s\"", gi.argv( 1 ) );
 }

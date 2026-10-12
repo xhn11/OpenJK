@@ -2,11 +2,13 @@
 #include "coop_snap.h"
 #include "coop_entnum.h"
 
-// Snapshots of the entities the host owns, host -> guest (design 2, 4; M4 adds guest -> host).
+// Snapshots of the entities each machine owns (design 2, 4): host -> guest the world and the host's
+// player, guest -> host the guest's player and whatever else the guest owns (missiles, M6 NPCs).
 //   coop_snapshot  long mapGen, short esSize, short psSize, short exSize, long viewOrigin[3] (float bits),
 //                  long blobLength, blob (coop_snap.h)
 //   coop_snapack   long mapGen, long frameNum            (-1: the next one must not be a delta)
 // The sender swaps entity numbers 0 <-> 1 in every field, so the receiver uses them as they come.
+// Each direction has its own ring: tx (frames we sent) and rx (frames we received).
 
 #ifdef JK2_MODE
 
@@ -25,32 +27,34 @@ static_assert( COOP_SNAP_MAX_NUM == MAX_GENTITIES, "coop_snap.h entity numbers" 
 #define COOP_TIME_JUMP_MS		500			// further behind than this, the guest jumps to the host's time
 
 static cvar_t			*coop_snapshotBytes;
-static coopSnapRing_t	snapRing;			// host: frames sent; guest: frames received
-static qboolean			snapRingReady;
+static coopSnapRing_t	txRing, rxRing;
+static qboolean			txRingReady, rxRingReady;
 
-// host
-static int				hostFrameNum;		// never reset, so frame numbers stay unique across maps
-static int				hostAckedFrame = -1;
-static int				hostLastBuiltTime = -1;
+// sending
+static int				txFrameNum;			// never reset, so frame numbers stay unique across maps
+static int				txAckedFrame = -1;
+static int				txLastBuiltTime = -1;
 
-// guest
-static byte				guestPending[COOP_MAX_MSGLEN];
-static int				guestPendingLen;
-static int				guestAppliedFrame = -1;
-static int				guestAckFrame = -1;
+// receiving
+static byte				rxPending[COOP_MAX_MSGLEN];
+static int				rxPendingLen;
+static int				rxAppliedFrame = -1;
+static int				rxAckFrame = -1;
+static qboolean			rxSynced;			// a complete frame was applied in this map
+static qboolean			rxNeedSweep;		// a frame was applied without a known previous one
+static int				applyClients;
+
+// guest time follows the host's frames
 static int				guestServerTime;
 static int				guestServerTimeAt;	// Sys_Milliseconds() when guestServerTime was applied
 static qboolean			guestHaveTime;
-static qboolean			guestSynced;
-static qboolean			guestNeedSweep;		// a frame was applied without a known previous one
-static int				applyNpcs;
 
-// the partner's eye position (design 8): host <- coop_view, guest <- coop_snapshot header
+// the partner's eye position (design 8): from the coop_snapshot header (and coop_view, older peers)
 static vec3_t			peerView;
 static qboolean			peerViewValid;
 static qboolean			peerViewLogged;
 
-// host scratch
+// sender scratch
 static entityState_t	gatherEs[COOP_SNAP_MAX_NUM];
 static coopEntExtra_t	gatherEx[COOP_SNAP_MAX_NUM];
 static playerState_t	gatherPs[COOP_SNAP_MAX_PS];
@@ -63,47 +67,88 @@ void CoopSnapshot_Init( void ) {
 	coop_snapshotBytes = Cvar_Get( "coop_snapshotBytes", "8000", 0 );	// snapshot bytes per packet (0: whatever fits)
 }
 
-static qboolean CoopSnapshot_EnsureRing( void ) {
-	if ( !snapRingReady ) {
-		snapRingReady = (qboolean)CoopSnap_Init( &snapRing, sizeof( entityState_t ), sizeof( playerState_t ),
+static qboolean CoopSnapshot_EnsureRing( coopSnapRing_t *ring, qboolean *ready ) {
+	if ( !*ready ) {
+		*ready = (qboolean)CoopSnap_Init( ring, sizeof( entityState_t ), sizeof( playerState_t ),
 			sizeof( coopEntExtra_t ), COOP_SNAP_POOL_ENTS, COOP_SNAP_POOL_PS );
-		if ( !snapRingReady ) {
+		if ( !*ready ) {
 			Com_Printf( "COOP: cannot allocate the snapshot ring\n" );
 		}
 	}
-	return snapRingReady;
+	return *ready;
 }
 
-void CoopSnapshot_GuestReady( void ) {
-	hostAckedFrame = -1;
-	hostLastBuiltTime = -1;
-	if ( snapRingReady ) {
-		CoopSnap_Clear( &snapRing );
+static coopOwner_t CoopSnapshot_Self( void ) {
+	return coop.role == COOP_ROLE_HOST ? COOP_OWNER_HOST : COOP_OWNER_GUEST;
+}
+
+static coopOwner_t CoopSnapshot_Partner( void ) {
+	return coop.role == COOP_ROLE_HOST ? COOP_OWNER_GUEST : COOP_OWNER_HOST;
+}
+
+// host: the guest left our map (or comes back into it): its puppet and everything else it owned goes.
+// The guest keeps the host's world as it is until it leaves the map itself.
+static void CoopSnapshot_FreeGuestEntities( void ) {
+	if ( coop.role != COOP_ROLE_HOST || !ge || !Coop_LocalMapRunning() ) {
+		return;
+	}
+	int freed = 0;
+	for ( int n = 1; n < ge->num_entities; n++ ) {
+		if ( ge->Coop_EntityOwner( n ) == COOP_OWNER_GUEST ) {
+			ge->Coop_FreeEntity( n );
+			freed++;
+		}
+	}
+	if ( freed ) {
+		Com_Printf( "COOP: removed %d guest entities\n", freed );
+	}
+}
+
+static void CoopSnapshot_ResetTx( void ) {
+	txAckedFrame = -1;
+	txLastBuiltTime = -1;
+	if ( txRingReady ) {
+		CoopSnap_Clear( &txRing );
+	}
+}
+
+static void CoopSnapshot_ResetRx( void ) {
+	rxPendingLen = 0;
+	rxAppliedFrame = -1;
+	rxAckFrame = -1;
+	rxSynced = qfalse;
+	rxNeedSweep = qfalse;
+	if ( rxRingReady ) {
+		CoopSnap_Clear( &rxRing );
 	}
 	peerViewValid = qfalse;
 	peerViewLogged = qfalse;
 }
 
-void CoopSnapshot_NewMap( void ) {
-	guestPendingLen = 0;
-	guestAppliedFrame = -1;
-	guestAckFrame = -1;
+void CoopSnapshot_GuestReady( void ) {	// host: the guest (re)entered our map, both directions start over
+	CoopSnapshot_FreeGuestEntities();
+	CoopSnapshot_ResetTx();
+	CoopSnapshot_ResetRx();
+}
+
+void CoopSnapshot_NewMap( void ) {		// guest: coop_map arrived
 	guestHaveTime = qfalse;
-	guestSynced = qfalse;
-	guestNeedSweep = qfalse;
-	if ( snapRingReady ) {
-		CoopSnap_Clear( &snapRing );
-	}
-	peerViewValid = qfalse;
-	peerViewLogged = qfalse;
+	CoopSnapshot_ResetTx();
+	CoopSnapshot_ResetRx();
 }
 
 void CoopSnapshot_LinkReset( void ) {
-	CoopSnapshot_GuestReady();
-	CoopSnapshot_NewMap();
+	CoopSnapshot_FreeGuestEntities();
+	guestHaveTime = qfalse;
+	CoopSnapshot_ResetTx();
+	CoopSnapshot_ResetRx();
 }
 
-// ---------------------------------------------------------------- host
+static qboolean CoopSnapshot_InWorld( void ) {	// both machines play the same map
+	return coop.role == COOP_ROLE_HOST ? Coop_HostGuestInWorld() : Coop_GuestInWorld();
+}
+
+// ---------------------------------------------------------------- sending
 
 static void CoopSnapshot_SwapEntityState( entityState_t *s ) {
 	s->number = Coop_SwapEntNum( s->number );
@@ -127,21 +172,22 @@ static int CoopSnapshot_Gather( void ) {
 	const gentity_t *player = SV_GentityNum( 0 );
 	const int playerSaber = ( player->inuse && player->client ) ? player->client->saberEntityNum : ENTITYNUM_NONE;
 	const int limit = ge->num_entities < COOP_SNAP_MAX_NUM ? ge->num_entities : COOP_SNAP_MAX_NUM;
+	const coopOwner_t self = CoopSnapshot_Self();
 	int count = 0, psCount = 0;
 	for ( int wire = 0; wire < limit; wire++ ) {
 		const int n = Coop_SwapEntNum( wire );	// ascending wire numbers keep the input sorted
-		if ( n < MAX_CLIENTS || n >= limit ) {
-			continue;	// M3: the players are not replicated (the partner puppet comes in M4)
+		if ( n == 1 || n >= limit ) {
+			continue;	// entity 1 is the partner's puppet, never ours
 		}
 		gentity_t *ent = SV_GentityNum( n );
-		if ( !ent->inuse || n == playerSaber || ( ent->s.eFlags & EF_PERMANENT ) ) {
+		if ( !ent->inuse || ( n == playerSaber && n != 0 ) || ( ent->s.eFlags & EF_PERMANENT ) ) {	// no saber: 0
 			continue;
 		}
 		const qboolean visible = (qboolean)( ent->linked && !( ent->svFlags & SVF_NOCLIENT ) );
 		if ( !visible && !ent->client ) {
 			continue;
 		}
-		if ( ge->Coop_EntityOwner( n ) != COOP_OWNER_HOST ) {
+		if ( ge->Coop_EntityOwner( n ) != self ) {
 			continue;
 		}
 		if ( ent->client && psCount >= COOP_SNAP_MAX_PS ) {
@@ -173,9 +219,12 @@ static void CoopSnapshot_WriteFloat( msg_t *msg, float f ) {
 	MSG_WriteLong( msg, bits );
 }
 
-static void CoopSnapshot_WriteHost( msg_t *msg ) {
-	if ( !Coop_HostGuestInWorld() || sv.time == hostLastBuiltTime || !CoopSnapshot_EnsureRing() ) {
+static void CoopSnapshot_WriteFrame( msg_t *msg ) {
+	if ( !CoopSnapshot_InWorld() || sv.time == txLastBuiltTime || !CoopSnapshot_EnsureRing( &txRing, &txRingReady ) ) {
 		return;	// one snapshot per game frame
+	}
+	if ( coop.role == COOP_ROLE_GUEST && !rxSynced ) {
+		return;	// the guest sends its own entities once it has the host's world
 	}
 	int budget = Coop_MsgRoom( msg ) - COOP_SNAP_WIRE_HEADER;
 	if ( coop_snapshotBytes->integer > 0 && budget > coop_snapshotBytes->integer ) {
@@ -191,13 +240,13 @@ static void CoopSnapshot_WriteHost( msg_t *msg ) {
 	in.ps = gatherPsP;
 	in.ex = gatherExP;
 	coopSnapWriteInfo_t info;
-	const int frameNum = ++hostFrameNum;
-	const int len = CoopSnap_Write( &snapRing, frameNum, hostAckedFrame, sv.time, &in, snapBlob, budget, &info );
+	const int frameNum = ++txFrameNum;
+	const int len = CoopSnap_Write( &txRing, frameNum, txAckedFrame, sv.time, &in, snapBlob, budget, &info );
 	if ( len < 0 ) {
 		Com_Printf( "COOP: snapshot %d not written (%d)\n", frameNum, len );
 		return;
 	}
-	hostLastBuiltTime = sv.time;
+	txLastBuiltTime = sv.time;
 	const gentity_t *player = SV_GentityNum( 0 );
 	MSG_WriteByte( msg, coop_snapshot );
 	MSG_WriteLong( msg, Coop_MapGen() );
@@ -217,32 +266,31 @@ static void CoopSnapshot_WriteHost( msg_t *msg ) {
 qboolean CoopSnapshot_ParseAck( msg_t *msg ) {
 	const int gen = MSG_ReadLong( msg );
 	const int frame = MSG_ReadLong( msg );
-	if ( coop.role == COOP_ROLE_HOST && gen == Coop_MapGen() ) {
+	if ( gen == Coop_MapGen() ) {
 		if ( frame < 0 ) {
-			hostAckedFrame = -1;
-		} else if ( frame > hostAckedFrame && frame <= hostFrameNum ) {
-			hostAckedFrame = frame;
+			txAckedFrame = -1;
+		} else if ( frame > txAckedFrame && frame <= txFrameNum ) {
+			txAckedFrame = frame;
 		}
 	}
 	return qtrue;
 }
 
-// ---------------------------------------------------------------- guest
+// ---------------------------------------------------------------- receiving
 
-static void CoopSnapshot_WriteGuestAck( msg_t *msg ) {
-	if ( !Coop_MapGen() || Coop_MsgRoom( msg ) < 9 ) {
+static void CoopSnapshot_WriteAck( msg_t *msg ) {
+	if ( !CoopSnapshot_InWorld() || Coop_MsgRoom( msg ) < 9 ) {
 		return;
 	}
 	MSG_WriteByte( msg, coop_snapack );
 	MSG_WriteLong( msg, Coop_MapGen() );
-	MSG_WriteLong( msg, guestAckFrame );
+	MSG_WriteLong( msg, rxAckFrame );
 }
 
 void CoopSnapshot_Write( msg_t *msg ) {
-	if ( coop.role == COOP_ROLE_HOST ) {
-		CoopSnapshot_WriteHost( msg );
-	} else if ( coop.role == COOP_ROLE_GUEST ) {
-		CoopSnapshot_WriteGuestAck( msg );
+	if ( coop.role == COOP_ROLE_HOST || coop.role == COOP_ROLE_GUEST ) {
+		CoopSnapshot_WriteAck( msg );		// 9 bytes, before the snapshot takes the rest of the budget
+		CoopSnapshot_WriteFrame( msg );
 	}
 }
 
@@ -262,7 +310,7 @@ qboolean CoopSnapshot_Parse( msg_t *msg ) {
 	}
 	const byte *blob = msg->data + msg->readcount;
 	msg->readcount += len;
-	if ( coop.role != COOP_ROLE_GUEST || gen != Coop_MapGen() ) {
+	if ( gen != Coop_MapGen() || !CoopSnapshot_InWorld() ) {
 		return qtrue;	// another map: ignore
 	}
 	if ( esSize != (int)sizeof( entityState_t ) || psSize != (int)sizeof( playerState_t ) || exSize != (int)sizeof( coopEntExtra_t ) ) {
@@ -274,8 +322,8 @@ qboolean CoopSnapshot_Parse( msg_t *msg ) {
 		}
 		return qtrue;
 	}
-	memcpy( guestPending, blob, len );	// Coop_Frame applies it; only the newest one matters
-	guestPendingLen = len;
+	memcpy( rxPending, blob, len );	// Coop_Frame applies it; only the newest one matters
+	rxPendingLen = len;
 	VectorCopy( view, peerView );
 	peerViewValid = qtrue;
 	return qtrue;
@@ -302,90 +350,90 @@ static void CoopSnapshot_MarkPresent( void *, int num, int, const uint8_t *, con
 		sweepPresent[num] = 1;
 	}
 	if ( ps ) {
-		applyNpcs++;
+		applyClients++;
 	}
 }
 
-// host entities that the guest has from its own map load but the host no longer has
+// partner entities we have (the guest: from its own map load) that the partner no longer has
 static void CoopSnapshot_Sweep( int frameNum ) {
 	memset( sweepPresent, 0, sizeof( sweepPresent ) );
-	applyNpcs = 0;
-	CoopSnap_ForEach( &snapRing, frameNum, CoopSnapshot_MarkPresent, NULL );
-	const int limit = ge->num_entities;	// the guest's own entities are skipped by the owner check below
+	applyClients = 0;
+	CoopSnap_ForEach( &rxRing, frameNum, CoopSnapshot_MarkPresent, NULL );
+	const coopOwner_t partner = CoopSnapshot_Partner();
+	const int limit = ge->num_entities;	// our own entities are skipped by the owner check below
 	int removed = 0;
-	for ( int n = MAX_CLIENTS; n < limit; n++ ) {
+	for ( int n = 1; n < limit; n++ ) {
 		gentity_t *ent = SV_GentityNum( n );
-		if ( !ent->inuse || sweepPresent[n] || !ent->linked || ( ent->svFlags & SVF_NOCLIENT ) || ( ent->s.eFlags & EF_PERMANENT ) ) {
+		if ( !ent->inuse || sweepPresent[n] || ( ent->s.eFlags & EF_PERMANENT ) ) {
+			continue;
+		}
+		if ( !ent->client && ( !ent->linked || ( ent->svFlags & SVF_NOCLIENT ) ) ) {
 			continue;	// unseen kinds (triggers, path corners...) are never in snapshots: keep them
 		}
-		if ( ge->Coop_EntityOwner( n ) != COOP_OWNER_HOST ) {
+		if ( ge->Coop_EntityOwner( n ) != partner ) {
 			continue;
 		}
 		ge->Coop_FreeEntity( n );
 		removed++;
 	}
 	if ( removed ) {
-		Com_Printf( "COOP: removed %d entities the host does not have\n", removed );
+		Com_Printf( "COOP: removed %d entities the partner does not have\n", removed );
 	}
 }
 
 void CoopSnapshot_Frame( void ) {
-	if ( coop.role != COOP_ROLE_GUEST || !guestPendingLen ) {
+	if ( !rxPendingLen ) {
 		return;
 	}
-	if ( !Coop_GuestInWorld() || !CoopCS_Synced() || !CoopSnapshot_EnsureRing() ) {
+	if ( !CoopSnapshot_InWorld() || !CoopSnapshot_EnsureRing( &rxRing, &rxRingReady ) ) {
+		return;
+	}
+	if ( coop.role == COOP_ROLE_GUEST && !CoopCS_Synced() ) {
 		return;	// keep it until the world can take it (configstrings first: plan-M3 R3)
 	}
 	int frameNum = -1;
-	const int result = CoopSnap_Read( &snapRing, guestPending, guestPendingLen, &frameNum );
-	guestPendingLen = 0;
+	const int result = CoopSnap_Read( &rxRing, rxPending, rxPendingLen, &frameNum );
+	rxPendingLen = 0;
 	if ( result == COOP_SNAP_NOBASE ) {
-		guestAckFrame = -1;
+		rxAckFrame = -1;
 		return;
 	}
 	if ( result != COOP_SNAP_OK ) {
 		Com_Printf( "COOP: bad snapshot (%d), asking for a full one\n", result );
-		guestAckFrame = -1;
+		rxAckFrame = -1;
 		return;
 	}
-	if ( CoopSnap_Diff( &snapRing, guestAppliedFrame, frameNum, CoopSnapshot_ApplyChange, NULL ) == 1 ) {
-		guestNeedSweep = qtrue;
+	if ( CoopSnap_Diff( &rxRing, rxAppliedFrame, frameNum, CoopSnapshot_ApplyChange, NULL ) == 1 ) {
+		rxNeedSweep = qtrue;
 	}
-	const coopSnapFrame_t *f = CoopSnap_Frame( &snapRing, frameNum );
+	const coopSnapFrame_t *f = CoopSnap_Frame( &rxRing, frameNum );
 	const qboolean complete = (qboolean)( f && ( f->flags & COOP_SNAPF_COMPLETE ) );
-	if ( guestNeedSweep && complete ) {
-		guestNeedSweep = qfalse;
+	if ( rxNeedSweep && complete ) {
+		rxNeedSweep = qfalse;
 		CoopSnapshot_Sweep( frameNum );
 	}
-	guestAppliedFrame = frameNum;
-	guestAckFrame = frameNum;
-	if ( f ) {
+	rxAppliedFrame = frameNum;
+	rxAckFrame = frameNum;
+	if ( f && coop.role == COOP_ROLE_GUEST ) {
 		guestServerTime = f->serverTime;
 		guestServerTimeAt = Sys_Milliseconds();
 		guestHaveTime = qtrue;
 	}
-	if ( !guestSynced && complete ) {
-		guestSynced = qtrue;
+	if ( !rxSynced && complete ) {
+		rxSynced = qtrue;
 		memset( sweepPresent, 0, sizeof( sweepPresent ) );
-		applyNpcs = 0;
-		const int ents = CoopSnap_ForEach( &snapRing, frameNum, CoopSnapshot_MarkPresent, NULL );
-		Com_Printf( "COOP: world synced (%d entities, %d npcs)\n", ents, applyNpcs );
+		applyClients = 0;
+		const int ents = CoopSnap_ForEach( &rxRing, frameNum, CoopSnapshot_MarkPresent, NULL );
+		if ( coop.role == COOP_ROLE_GUEST ) {
+			Com_Printf( "COOP: world synced (%d entities, %d npcs)\n", ents, applyClients );
+		} else {
+			Com_Printf( "COOP: guest synced (%d entities, %d clients)\n", ents, applyClients );
+		}
 	}
 }
 
-void CoopView_Write( msg_t *msg ) {
-	if ( coop.role != COOP_ROLE_GUEST || !Coop_GuestInWorld() || Coop_MsgRoom( msg ) < 17 ) {
-		return;
-	}
-	const gentity_t *player = SV_GentityNum( 0 );
-	if ( !player->inuse || !player->client ) {
-		return;
-	}
-	MSG_WriteByte( msg, coop_view );
-	MSG_WriteLong( msg, Coop_MapGen() );
-	for ( int i = 0; i < 3; i++ ) {
-		CoopSnapshot_WriteFloat( msg, player->client->serverViewOrg[i] );
-	}
+void CoopView_Write( msg_t * ) {
+	// the partner's view travels in the coop_snapshot header both ways now (M4)
 }
 
 qboolean CoopView_Parse( msg_t *msg ) {
@@ -403,9 +451,7 @@ qboolean CoopView_Parse( msg_t *msg ) {
 }
 
 qboolean Coop_PeerViewOrigin( vec3_t org ) {
-	const qboolean inWorld = coop.role == COOP_ROLE_HOST ? Coop_HostGuestInWorld()
-		: (qboolean)( coop.role == COOP_ROLE_GUEST && Coop_GuestInWorld() && guestSynced );
-	if ( !inWorld || !peerViewValid ) {
+	if ( !CoopSnapshot_InWorld() || !rxSynced || !peerViewValid ) {
 		return qfalse;
 	}
 	if ( !peerViewLogged ) {

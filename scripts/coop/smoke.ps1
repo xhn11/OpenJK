@@ -1,11 +1,12 @@
-# All headless smoke tests of milestones M0-M3. Usage (from the repo root):
-#   powershell -ExecutionPolicy Bypass -File scripts/coop/smoke-m3.ps1 [-Only S5,S10]
+# All headless coop smoke tests (milestones M0 onward). Usage (from the repo root):
+#   powershell -ExecutionPolicy Bypass -File scripts/coop/smoke.ps1 [-Only S5,S10]
 # Every test must end with SMOKE PASS; the script prints one line per test and exits 1 if any failed.
 # Notes: the host only runs game frames after a command following the map load (hence -HostAfterMap
 # '+wait 100' where host frames matter), and kejim_post's intro cutscene blocks saving unless it is
 # sped up with timescale.
 param([string[]]$Only = @())
 $ErrorActionPreference = "Stop"
+$Only = @($Only | ForEach-Object { $_ -split "," } | Where-Object { $_ })
 $link = "-HostArgs '+coop_host' -GuestArgs '+coop_connect 127.0.0.1:29170'"
 $tests = [ordered]@{
   S0  = "-NoGuest -Seconds 20 -ExpectHost 'Server: kejim_post' -RejectHost 'COOP: '"
@@ -24,6 +25,10 @@ $tests = [ordered]@{
   S13 = "-Seconds 70 $link -HostAfterMap '+wait 100' -ExpectHost 'COOP: guest entered kejim_post' -ExpectGuest 'COOP: world synced' -RejectHost 'link closed' -RejectGuest 'link closed','negative reference count','areaportal of \d+ off by','bad snapshot'"
   S14 = "-Seconds 50 -HostArgs '+coop_host','+coop_cptest CoopCenterPrint' -GuestArgs '+coop_connect 127.0.0.1:29170' -ExpectHost 'COOP: guest entered kejim_post' -ExpectGuest 'COOP: server command from host: cp .CoopCenterPrint.' -RejectHost 'link closed' -RejectGuest 'link closed'"
   S15 = "-Seconds 50 $link -HostAfterMap '+wait 100' -ExpectHost 'COOP: guest entered kejim_post','COOP: partner view added to snapshots' -ExpectGuest 'COOP: world synced','COOP: partner view added to snapshots' -RejectHost 'link closed' -RejectGuest 'link closed','bad snapshot'"
+  # M4: partner puppets both ways, game commands
+  S16 = "-Seconds 50 $link -HostAfterMap '+wait 100' -ExpectHost 'COOP: guest synced','COOP: partner puppet ready \(kyle\)' -ExpectGuest 'COOP: world synced','COOP: partner puppet ready \(kyle\)' -RejectHost 'link closed','bad snapshot','cannot build' -RejectGuest 'link closed','bad snapshot','cannot build'"
+  S17 = "-Seconds 50 -HostArgs '+coop_host' -HostAfterMap '+wait 100' -GuestArgs '+set coop_onworld \`"coop_gtest fromguest\`"','+coop_connect 127.0.0.1:29170' -ExpectHost 'COOP: game command echo fromguest' -ExpectGuest 'COOP: world synced' -RejectHost 'link closed','unknown game command' -RejectGuest 'link closed'"
+  S18 = "-Seconds 50 -HostArgs '+set coop_onworld \`"wait 3000; coop_entinfo 1\`"','+coop_host' -HostAfterMap '+wait 100' -GuestArgs '+set coop_onworld \`"wait 500; setviewpos -100 200 30 0\`"','+coop_connect 127.0.0.1:29170' -ExpectHost 'COOP: entinfo 1 owner 2 class player .* origin -100 200' -ExpectGuest 'COOP: world synced' -RejectHost 'link closed' -RejectGuest 'link closed'"
 }
 $failed = @()
 foreach ($id in $tests.Keys) {

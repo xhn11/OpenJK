@@ -32,6 +32,7 @@ along with this program; if not, see <http://www.gnu.org/licenses/>.
 #include "objectives.h"
 #include "../cgame/cg_camera.h"
 #include "g_icarus.h"
+#include "g_coop.h"
 #include "../../code/qcommon/sstring.h"
 #include "../code/qcommon/ojk_saved_game_helper.h"
 
@@ -672,7 +673,7 @@ static void WriteGEntities(qboolean qbAutosave)
 	{
 		gentity_t* ent = &g_entities[i];
 
-		if ( ent->inuse )
+		if ( ent->inuse && G_CoopOwnsEnt( ent ) )	// coop: the partner's replicas are not ours to save
 		{
 			iCount++;
 		}
@@ -689,7 +690,7 @@ static void WriteGEntities(qboolean qbAutosave)
 	{
 		gentity_t* ent = &g_entities[i];
 
-		if ( ent->inuse)
+		if ( ent->inuse && G_CoopOwnsEnt( ent ) )
 		{
 			saved_game.write_chunk<int32_t>(
 				INT_ID('E', 'D', 'N', 'M'),

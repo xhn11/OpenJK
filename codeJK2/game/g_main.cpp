@@ -811,6 +811,7 @@ extern "C" Q_EXPORT game_export_t* QDECL GetGameAPI( game_import_t *import ) {
 	globals.Coop_GetEntityExtra = G_Coop_GetEntityExtra;
 	globals.Coop_ApplyEntity = G_Coop_ApplyEntity;
 	globals.Coop_FreeEntity = G_Coop_FreeEntity;
+	globals.Coop_GameCommand = G_Coop_GameCommand;
 //	globals.PrintEntClassname = PrintEntClassname;
 
 //	globals.ValidateAnimRange = PM_ValidateAnimRange;
