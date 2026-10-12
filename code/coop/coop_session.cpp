@@ -18,8 +18,45 @@ static int				coopHostMapGen;	// bumped by every finished map load on this machi
 static coopSession_t	sess;
 static cvar_t			*coop_onworld;
 
+void SV_GameSendServerCommand( int clientNum, const char *fmt, ... );	// sv_game.cpp:96
+
+static char				coopCpTest[MAX_STRING_CHARS];	// coop_cptest: centerprint sent once the guest is in the world
+
+static qboolean Coop_ForwardedCommand( const char *cmd ) {
+	static const char *forwarded[] = { "cp", "ct", "cts", "st" };	// shared by both players (cg_servercmds.cpp:265-273)
+	char name[16];
+	int i = 0;
+	while ( cmd[i] && cmd[i] != ' ' && i < (int)sizeof( name ) - 1 ) {
+		name[i] = cmd[i];
+		i++;
+	}
+	name[i] = 0;
+	for ( size_t k = 0; k < ARRAY_LEN( forwarded ); k++ ) {
+		if ( !Q_stricmp( name, forwarded[k] ) ) {
+			return qtrue;
+		}
+	}
+	return qfalse;
+}
+
+void Coop_ForwardServerCommand( int clientNum, const char *cmd ) {
+	if ( ( clientNum != -1 && clientNum != 0 ) || !Coop_HostGuestInWorld() || !Coop_ForwardedCommand( cmd ) ) {
+		return;
+	}
+	if ( (int)strlen( cmd ) + 6 > COOP_MAX_WIRE_CMD_LEN || Coop_ReliableFree() < 8 ) {
+		Com_Printf( "COOP: server command dropped (reliable queue full): %s\n", cmd );
+		return;
+	}
+	Coop_AddReliable( va( "svcmd %s", cmd ) );
+}
+
+static void Coop_CpTest_f( void ) {
+	Q_strncpyz( coopCpTest, Cmd_Args(), sizeof( coopCpTest ) );
+}
+
 void Coop_SessionInit( void ) {
 	coop_onworld = Cvar_Get( "coop_onworld", "", 0 );	// console commands run once when the guest is in the host's map (testing)
+	Cmd_AddCommand( "coop_cptest", Coop_CpTest_f );
 	memset( &sess, 0, sizeof( sess ) );
 }
 
@@ -76,6 +113,10 @@ void Coop_SessionMapLoaded( void ) {
 }
 
 void Coop_SessionFrame( void ) {
+	if ( coopCpTest[0] && Coop_HostGuestInWorld() ) {
+		SV_GameSendServerCommand( -1, "cp \"%s\"", coopCpTest );
+		coopCpTest[0] = 0;
+	}
 	if ( coop.role == COOP_ROLE_GUEST ) {
 		if ( sess.loadPending ) {
 			sess.loadPending = qfalse;
@@ -138,6 +179,14 @@ qboolean Coop_ExecuteReliableCmd( const char *cmd ) {
 		CoopSnapshot_GuestReady();
 		sess.onWorldPending = qtrue;
 		Com_Printf( "COOP: guest entered %s\n", sv_mapname->string );
+		return qtrue;
+	}
+	if ( !Q_stricmp( c, "svcmd" ) ) {
+		if ( coop.role == COOP_ROLE_GUEST && Coop_GuestInWorld() ) {
+			const char *text = cmd + 6;		// raw text after "svcmd ": quotes stay as the host wrote them
+			Com_Printf( "COOP: server command from host: %s\n", text );
+			SV_SendServerCommand( NULL, "%s", text );
+		}
 		return qtrue;
 	}
 	(void)cmd;		// the raw text is needed from Task 14 (svcmd)

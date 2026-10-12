@@ -28,6 +28,7 @@ along with this program; if not, see <http://www.gnu.org/licenses/>.
 #include "../qcommon/cm_local.h"
 
 #include "server.h"
+#include "../coop/coop_public.h"
 #include "../client/vmachine.h"
 #include "../client/client.h"
 #include "qcommon/ojk_saved_game.h"
@@ -100,6 +101,7 @@ void SV_GameSendServerCommand( int clientNum, const char *fmt, ... ) {
 	va_start (argptr,fmt);
 	Q_vsnprintf (msg, sizeof(msg), fmt, argptr);
 	va_end (argptr);
+	Coop_ForwardServerCommand( clientNum, msg );	// coop host: centerprints and captions go to the guest too
 
 	if ( clientNum == -1 ) {
 		SV_SendServerCommand( NULL, "%s", msg );
