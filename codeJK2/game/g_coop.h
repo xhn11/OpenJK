@@ -39,3 +39,7 @@ void		G_Coop_GetEntityExtra( int entNum, coopEntExtra_t *out );
 void		G_Coop_ApplyEntity( int entNum, const entityState_t *es, const playerState_t *ps, const coopEntExtra_t *ex );
 void		G_Coop_FreeEntity( int entNum );
 void		G_CoopEntInfo_f( void );								// console: coop_entinfo <num>
+// replica motion (design 4, 16)
+void		G_CoopRunReplica( gentity_t *ent );						// G_RunFrame on the guest, every host entity
+void		G_CoopRunReplicaMover( gentity_t *ent );				// g_mover.cpp: a host mover pushes only our entities
+void		G_CoopSetPortalCount( gentity_t *ent, int count );		// match the host's areaportal open count

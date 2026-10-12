@@ -146,3 +146,20 @@ void G_CoopEntInfo_f( void ) {
 		num, G_Coop_EntityOwner( num ), ex.inuse ? ex.classname : "(free)", ex.npcType, ex.linked, ex.areaPortalOpen,
 		ent->currentOrigin[0], ent->currentOrigin[1], ent->currentOrigin[2] );
 }
+
+#define COOP_MAX_PORTAL_STEPS	8
+
+void G_CoopSetPortalCount( gentity_t *ent, int count ) {
+	const int n = G_CoopIndex( ent );
+	int diff = count - g_coopPortal[n];
+	if ( diff > COOP_MAX_PORTAL_STEPS || diff < -COOP_MAX_PORTAL_STEPS ) {
+		gi.Printf( "COOP: areaportal of %d off by %d, clamped\n", n, diff );
+		diff = diff > 0 ? COOP_MAX_PORTAL_STEPS : -COOP_MAX_PORTAL_STEPS;
+	}
+	for ( ; diff > 0; diff-- ) {
+		G_CoopAdjustAreaPortal( ent, qtrue );
+	}
+	for ( ; diff < 0; diff++ ) {
+		G_CoopAdjustAreaPortal( ent, qfalse );
+	}
+}

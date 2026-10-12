@@ -190,7 +190,7 @@ void G_Coop_ApplyEntity( int entNum, const entityState_t *es, const playerState_
 	if ( ent->client ) {
 		VectorCopy( ent->client->ps.origin, ent->currentOrigin );
 		VectorCopy( ent->s.apos.trBase, ent->currentAngles );
-	} else if ( ent->s.eType != ET_MOVER ) {
+	} else if ( ent->s.eType != ET_MOVER || fresh ) {
 		EvaluateTrajectory( &ent->s.pos, level.time, ent->currentOrigin );
 		EvaluateTrajectory( &ent->s.apos, level.time, ent->currentAngles );
 	}
@@ -198,6 +198,9 @@ void G_Coop_ApplyEntity( int entNum, const entityState_t *es, const playerState_
 		gi.linkentity( ent );
 	} else if ( ent->linked ) {
 		gi.unlinkentity( ent );
+	}
+	if ( ent->linked ) {
+		G_CoopSetPortalCount( ent, ex->areaPortalOpen );	// after linking: the engine needs the entity's areas
 	}
 	if ( ent->client ) {
 		G_CoopReplicaAnims( ent, oldLegs, oldTorso );
@@ -213,4 +216,21 @@ void G_Coop_FreeEntity( int entNum ) {
 	if ( ent->inuse && !G_CoopOwnsEnt( ent ) ) {
 		G_FreeEntity( ent );
 	}
+}
+
+void G_CoopRunReplica( gentity_t *ent ) {
+	if ( ent->client ) {
+		return;		// NPCs: every snapshot places them (ps.origin), nothing to integrate
+	}
+	if ( ent->s.eType == ET_MOVER ) {
+		G_CoopRunReplicaMover( ent );
+		return;
+	}
+	if ( !ent->linked || ( ent->s.pos.trType == TR_STATIONARY && ent->s.apos.trType == TR_STATIONARY ) ) {
+		return;
+	}
+	// missiles, debris, dropped items: follow the trajectory, no collisions (the owner decides hits)
+	EvaluateTrajectory( &ent->s.pos, level.time, ent->currentOrigin );
+	EvaluateTrajectory( &ent->s.apos, level.time, ent->currentAngles );
+	gi.linkentity( ent );
 }

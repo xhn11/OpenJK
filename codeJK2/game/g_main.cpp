@@ -1324,7 +1324,8 @@ void G_RunFrame( int levelTime ) {
 		ent = &g_entities[i];
 
 		if ( !G_CoopRunsLocally( ent ) )
-		{//coop guest: the host simulates this entity (think, AI, ICARUS, movers, missiles, events), snapshots replay it
+		{//coop guest: the host simulates this entity (think, AI, ICARUS, events); we only move it along its trajectory
+			G_CoopRunReplica( ent );
 			continue;
 		}
 

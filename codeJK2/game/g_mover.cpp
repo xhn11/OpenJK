@@ -25,6 +25,7 @@ along with this program; if not, see <http://www.gnu.org/licenses/>.
 
 #include "g_local.h"
 #include "g_functions.h"
+#include "g_coop.h"
 #include "objectives.h"
 
 #define MOVER_START_ON		1
@@ -60,6 +61,7 @@ typedef struct {
 	float	deltayaw;
 } pushed_t;
 pushed_t	pushed[MAX_GENTITIES], *pushed_p;
+static qboolean	g_coopReplicaPush = qfalse;	// G_CoopRunReplicaMover: push only entities this machine owns
 
 
 /*
@@ -338,6 +340,10 @@ qboolean G_MoverPush( gentity_t *pusher, vec3_t move, vec3_t amove, gentity_t **
 	// see if any solid entities are inside the final position
 	for ( e = 0 ; e < listedEntities ; e++ ) {
 		check = entityList[ e ];
+		if ( g_coopReplicaPush && !G_CoopOwnsEnt( check ) )
+		{//coop guest replaying a host mover: only our own player and entities get pushed, replicas follow the host
+			continue;
+		}
 
 		if (( check->s.eFlags & EF_MISSILE_STICK ) && (notMoving || check->s.groundEntityNum < 0 || check->s.groundEntityNum >= ENTITYNUM_NONE ))
 		{
@@ -573,6 +579,36 @@ void G_RunMover( gentity_t *ent ) {
 */
 	// check think function
 	G_RunThink( ent );
+}
+
+/*
+================
+G_CoopRunReplicaMover
+
+Coop guest: a mover the host owns. Its trajectory comes from the host; evaluate it, push our own
+entities out of the way and never stop or reverse it (the host decides). If our player is stuck,
+G_TryPushingEntity crushes him with the mover's damage like in SP.
+================
+*/
+void G_CoopRunReplicaMover( gentity_t *ent ) {
+	if ( ent->flags & FL_TEAMSLAVE ) {
+		return;	// the captain moves the whole team
+	}
+	if ( ent->s.pos.trType == TR_STATIONARY && ent->s.apos.trType == TR_STATIONARY ) {
+		return;
+	}
+	for ( gentity_t *part = ent ; part ; part = part->teamchain ) {
+		vec3_t		origin, angles, move, amove;
+		gentity_t	*obstacle = NULL;
+		EvaluateTrajectory( &part->s.pos, level.time, origin );
+		EvaluateTrajectory( &part->s.apos, level.time, angles );
+		VectorSubtract( origin, part->currentOrigin, move );
+		VectorSubtract( angles, part->currentAngles, amove );
+		pushed_p = pushed;
+		g_coopReplicaPush = qtrue;
+		G_MoverPush( part, move, amove, &obstacle );	// moves part even when blocked
+		g_coopReplicaPush = qfalse;
+	}
 }
 
 /*
