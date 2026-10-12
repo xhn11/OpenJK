@@ -5,6 +5,7 @@ coopLink_t	coop;
 cvar_t		*coop_port, *coop_name, *coop_timeout, *coop_debug, *coop_autotest;
 static cvar_t *coop_role;
 static cvar_t *coop_simLoss, *coop_simLatency, *coop_autotestCount;
+static cvar_t *coop_onlink;
 
 coopRole_t	Coop_Role( void )		{ return coop.role; }
 qboolean	Coop_IsLinked( void )	{ return (qboolean)( coop.state == COOP_LINK_ACTIVE ); }
@@ -12,6 +13,7 @@ qboolean	Coop_IsLinked( void )	{ return (qboolean)( coop.state == COOP_LINK_ACTI
 static void Coop_Reset( coopRole_t role, coopLinkState_t state ) {
 	memset( &coop, 0, sizeof( coop ) );
 	CoopRel_Init( &coop.rel );
+	CoopInQ_Init( &coop.inQueue );
 	coop.role = role;
 	coop.state = state;
 	Cvar_Set( "coop_role", va( "%i", (int)role ) );
@@ -117,6 +119,14 @@ static qboolean Coop_ReadTest( msg_t *msg ) {
 	return qtrue;
 }
 
+qboolean Coop_LocalMapRunning( void ) {
+	return (qboolean)( com_sv_running && com_sv_running->integer && sv.state == SS_GAME );
+}
+
+qboolean Coop_LocalMapReady( void ) {
+	return (qboolean)( Coop_LocalMapRunning() && svs.clients && svs.clients[0].state == CS_ACTIVE );
+}
+
 static void Coop_LinkUp( netadr_t from ) {
 	CoopNetchan_Setup( coop.role == COOP_ROLE_HOST ? NS_SERVER : NS_CLIENT, &coop.chan, from );
 	coop.peer = from;
@@ -129,10 +139,22 @@ static void Coop_LinkUp( netadr_t from ) {
 		coop.testPending = Coop_TestClamp( coop_autotest->integer );
 		coop.testRepeats = coop_autotestCount->integer < 1 ? 1 : coop_autotestCount->integer;
 	}
+	if ( coop.localLoading ) {
+		Coop_AddReliable( "loading" );	// the peer must not time us out while our client finishes loading
+	}
+	coop.onLinkPending = (qboolean)( coop_onlink->string[0] != 0 );
 	Coop_OnLinkUp();
 }
 
 // ---------------------------------------------------------------- commands
+
+static void Coop_ReloadMap_f( void ) {
+	if ( !Coop_LocalMapRunning() ) {
+		Com_Printf( "COOP: no map is running\n" );
+		return;
+	}
+	Cbuf_AddText( va( "%s %s\n", Cvar_VariableIntegerValue( "helpUsObi" ) ? "devmap" : "map", sv_mapname->string ) );
+}
 
 static void Coop_Host_f( void ) {
 	if ( coop.state != COOP_LINK_IDLE ) {
@@ -285,6 +307,13 @@ static void Coop_ExecuteReliable( const char *s ) {
 		Com_Printf( "COOP: hello from %s\n", Cmd_Argv( 1 ) );
 	} else if ( !Q_stricmp( c, "say" ) ) {
 		Com_Printf( "COOP %s: %s\n", coop.peerName, Cmd_Argv( 1 ) );
+	} else if ( !Q_stricmp( c, "loading" ) ) {
+		coop.peerLoading = qtrue;
+		coop.peerLoadingSince = Sys_Milliseconds();
+		Com_Printf( "COOP: peer is loading a map\n" );
+	} else if ( !Q_stricmp( c, "loaded" ) ) {
+		coop.peerLoading = qfalse;
+		Com_Printf( "COOP: peer finished loading\n" );
 	} else if ( !Coop_ExecuteReliableCmd( s ) && coop_debug->integer ) {
 		Com_Printf( "COOP: unknown reliable command \"%s\"\n", c );
 	}
@@ -301,8 +330,10 @@ static void Coop_ParsePacket( msg_t *msg ) {
 			const int seq = MSG_ReadLong( msg );
 			char text[COOP_MAX_RELIABLE_LEN];
 			Q_strncpyz( text, MSG_ReadString( msg ), sizeof( text ) );
-			if ( CoopRel_Accept( &coop.rel, seq ) ) {
-				Coop_ExecuteReliable( text );
+			// never run handlers here (we may be inside a nested Com_EventLoop): Coop_Frame runs them.
+			// A full queue leaves the command unacknowledged, so the peer sends it again.
+			if ( !CoopInQ_Full( &coop.inQueue ) && CoopRel_Accept( &coop.rel, seq ) ) {
+				CoopInQ_Push( &coop.inQueue, text );
 			}
 		} else if ( cmd == coop_test ) {
 			if ( !Coop_ReadTest( msg ) ) {
@@ -312,6 +343,16 @@ static void Coop_ParsePacket( msg_t *msg ) {
 			Coop_CloseLink( va( "bad packet command %d", cmd ), qtrue );
 			return;
 		}
+	}
+}
+
+static void Coop_RunInbound( void ) {
+	const char *queued;
+	while ( coop.state == COOP_LINK_ACTIVE && ( queued = CoopInQ_Front( &coop.inQueue ) ) != nullptr ) {
+		char text[COOP_MAX_RELIABLE_LEN];
+		Q_strncpyz( text, queued, sizeof( text ) );
+		CoopInQ_Pop( &coop.inQueue );
+		Coop_ExecuteReliable( text );
 	}
 }
 
@@ -354,7 +395,7 @@ void Coop_ReceivePackets( void ) {
 	}
 }
 
-static void Coop_SendPacket( void ) {
+static void Coop_SendPacket( qboolean reliableOnly ) {
 	static byte buf[COOP_MAX_MSGLEN];
 	msg_t msg;
 	MSG_Init( &msg, buf, COOP_MAX_PAYLOAD );	// the largest message the coop netchan can deliver
@@ -371,8 +412,10 @@ static void Coop_SendPacket( void ) {
 		MSG_WriteLong( &msg, seq );
 		MSG_WriteString( &msg, cmd );
 	}
-	Coop_WriteTest( &msg );
-	Coop_WritePayload( &msg );	// writers stay within Coop_MsgRoom, leaving COOP_MSG_TAIL bytes
+	if ( !reliableOnly ) {
+		Coop_WriteTest( &msg );
+		Coop_WritePayload( &msg );	// writers stay within Coop_MsgRoom, leaving COOP_MSG_TAIL bytes
+	}
 	MSG_WriteByte( &msg, coop_eof );
 	coop.lastSent = Sys_Milliseconds();
 	if ( msg.overflowed ) {
@@ -382,10 +425,39 @@ static void Coop_SendPacket( void ) {
 	CoopNetchan_Transmit( &coop.chan, msg.cursize, msg.data );
 }
 
+void Coop_FlushNow( void ) {
+	if ( coop.state != COOP_LINK_ACTIVE ) {
+		return;
+	}
+	Coop_SendPacket( qtrue );
+	Coop_SendPacket( qtrue );	// twice: one lost packet must not cost the link
+}
+
+void Coop_MapLoadStarting( void ) {
+	coop.localLoading = qtrue;
+	if ( coop.state != COOP_LINK_ACTIVE ) {
+		return;
+	}
+	Coop_AddReliable( "loading" );
+	Coop_FlushNow();
+	Com_Printf( "COOP: map load started, peer notified\n" );
+}
+
+void Coop_MapLoadFinished( void ) {
+	coop.lastReceived = Sys_Milliseconds();	// nothing could be received during the synchronous load
+}
+
 void Coop_Frame( void ) {
 	NET_IP_SetSimulation( coop_simLoss->integer, coop_simLatency->integer );
 	NET_IP_FlushSimulated();
 	const int now = Sys_Milliseconds();
+	if ( coop.localLoading && Coop_LocalMapReady() ) {
+		coop.localLoading = qfalse;
+		if ( coop.state == COOP_LINK_ACTIVE ) {
+			Coop_AddReliable( "loaded" );
+			Com_Printf( "COOP: map loaded, peer notified\n" );
+		}
+	}
 	if ( coop.state == COOP_LINK_CONNECTING ) {
 		if ( now - coop.connectStart > COOP_CONNECT_TIMEOUT_MS ) {
 			Com_Printf( "COOP: connection to %s timed out\n", NET_AdrToString( coop.peer ) );
@@ -401,13 +473,24 @@ void Coop_Frame( void ) {
 	if ( coop.state != COOP_LINK_ACTIVE ) {
 		return;
 	}
-	const int timeoutSec = coop_timeout->integer < COOP_MIN_TIMEOUT_SEC ? COOP_MIN_TIMEOUT_SEC : coop_timeout->integer;
-	if ( now - coop.lastReceived > timeoutSec * 1000 ) {
+	Coop_RunInbound();
+	if ( coop.state != COOP_LINK_ACTIVE ) {
+		return;	// a command closed the link
+	}
+	if ( coop.onLinkPending ) {
+		coop.onLinkPending = qfalse;
+		Cbuf_AddText( va( "%s\n", coop_onlink->string ) );
+	}
+	int timeoutMs = ( coop_timeout->integer < COOP_MIN_TIMEOUT_SEC ? COOP_MIN_TIMEOUT_SEC : coop_timeout->integer ) * 1000;
+	if ( coop.localLoading || ( coop.peerLoading && now - coop.peerLoadingSince < COOP_LOAD_TIMEOUT_MS ) ) {
+		timeoutMs = COOP_LOAD_TIMEOUT_MS;
+	}
+	if ( now - coop.lastReceived > timeoutMs ) {
 		Coop_CloseLink( "timed out", qtrue );
 		return;
 	}
 	if ( now - coop.lastSent >= COOP_PACKET_INTERVAL_MS ) {
-		Coop_SendPacket();
+		Coop_SendPacket( qfalse );
 	}
 }
 
@@ -420,6 +503,7 @@ void Coop_Init( void ) {
 	coop_autotestCount	= Cvar_Get( "coop_autotestCount", "1", 0 );	// packets in a row that carry the coop_autotest payload
 	coop_simLoss		= Cvar_Get( "coop_simLoss", "0", 0 );		// % of outgoing coop UDP packets dropped (testing)
 	coop_simLatency		= Cvar_Get( "coop_simLatency", "0", 0 );	// ms added to outgoing coop UDP packets (testing)
+	coop_onlink		= Cvar_Get( "coop_onlink", "", 0 );	// console commands run once after each link up (testing)
 	coop_role		= Cvar_Get( "coop_role", "0", CVAR_ROM );
 	Cmd_AddCommand( "coop_host", Coop_Host_f );
 	Cmd_AddCommand( "coop_connect", Coop_Connect_f );
@@ -427,6 +511,7 @@ void Coop_Init( void ) {
 	Cmd_AddCommand( "coop_status", Coop_Status_f );
 	Cmd_AddCommand( "coop_say", Coop_Say_f );
 	Cmd_AddCommand( "coop_sendtest", Coop_SendTest_f );
+	Cmd_AddCommand( "coop_reloadmap", Coop_ReloadMap_f );
 	Coop_Reset( COOP_ROLE_NONE, COOP_LINK_IDLE );
 }
 

@@ -25,6 +25,7 @@ along with this program; if not, see <http://www.gnu.org/licenses/>.
 
 #include "../client/snd_music.h"	// didn't want to put this in snd_local because of rebuild times etc.
 #include "server.h"
+#include "../coop/coop_public.h"
 
 #if !defined (MINIHEAP_H_INC)
 	#include "../qcommon/MiniHeap.h"
@@ -199,6 +200,8 @@ void SV_SpawnServer( const char *server, ForceReload_e eForceReload, qboolean bA
 	int			i;
 	int			checksum;
 
+	Coop_MapLoadStarting();	// tell the coop peer before this synchronous load stops all packets
+
 	re.RegisterMedia_LevelLoadBegin( server, eForceReload, bAllowScreenDissolve );
 
 
@@ -370,6 +373,8 @@ void SV_SpawnServer( const char *server, ForceReload_e eForceReload, qboolean bA
 	Z_Validate();
 
 	Com_Printf ("-----------------------------------\n");
+
+	Coop_MapLoadFinished();
 }
 
 #define G2_VERT_SPACE_SIZE 256

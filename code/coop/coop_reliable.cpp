@@ -47,3 +47,33 @@ bool CoopRel_Accept( coopReliable_t *r, int seq ) {
 int CoopRel_FreeSlots( const coopReliable_t *r ) {
 	return COOP_MAX_RELIABLE - ( r->outSequence - r->outAcknowledged );
 }
+
+void CoopInQ_Init( coopInQueue_t *q ) {
+	q->head = 0;
+	q->count = 0;
+}
+
+bool CoopInQ_Full( const coopInQueue_t *q ) {
+	return q->count >= COOP_MAX_INBOUND;
+}
+
+bool CoopInQ_Push( coopInQueue_t *q, const char *cmd ) {
+	const size_t len = strlen( cmd );
+	if ( CoopInQ_Full( q ) || len >= COOP_MAX_RELIABLE_LEN ) {
+		return false;
+	}
+	memcpy( q->cmds[( q->head + q->count ) % COOP_MAX_INBOUND], cmd, len + 1 );
+	q->count++;
+	return true;
+}
+
+const char *CoopInQ_Front( const coopInQueue_t *q ) {
+	return q->count ? q->cmds[q->head] : nullptr;
+}
+
+void CoopInQ_Pop( coopInQueue_t *q ) {
+	if ( q->count ) {
+		q->head = ( q->head + 1 ) % COOP_MAX_INBOUND;
+		q->count--;
+	}
+}

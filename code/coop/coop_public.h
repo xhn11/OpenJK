@@ -12,3 +12,5 @@ qboolean	Coop_IsLinked( void );							// ACTIVE
 coopRole_t	Coop_Role( void );
 qboolean	Coop_AddReliable( const char *cmd );			// qfalse: not linked, too long (dropped) or the queue overflowed (link closed)
 int			Coop_ReliableFree( void );						// free slots in the outgoing reliable queue, 0 when not linked
+void		Coop_MapLoadStarting( void );					// SV_SpawnServer start: tell the peer, the load blocks all packets
+void		Coop_MapLoadFinished( void );					// SV_SpawnServer end

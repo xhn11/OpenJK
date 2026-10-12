@@ -1,6 +1,7 @@
 #include "coop_test.h"
 #include "coop_reliable.h"
 #include <cstring>
+#include <cstdio>
 #include <string>
 #include <memory>
 
@@ -61,4 +62,49 @@ COOP_TEST( rel_free_slots_track_pending ) {
 	CHECK_EQ( CoopRel_FreeSlots( r.get() ), COOP_MAX_RELIABLE - 2 );
 	CoopRel_Ack( r.get(), 2 );
 	CHECK_EQ( CoopRel_FreeSlots( r.get() ), COOP_MAX_RELIABLE );
+}
+
+static std::unique_ptr<coopInQueue_t> NewInQ() {
+	std::unique_ptr<coopInQueue_t> q( new coopInQueue_t );
+	CoopInQ_Init( q.get() );
+	return q;
+}
+
+COOP_TEST( inq_fifo_order ) {
+	auto q = NewInQ();
+	CHECK( CoopInQ_Front( q.get() ) == nullptr );
+	CHECK( CoopInQ_Push( q.get(), "a" ) );
+	CHECK( CoopInQ_Push( q.get(), "b" ) );
+	CHECK( !strcmp( CoopInQ_Front( q.get() ), "a" ) );
+	CoopInQ_Pop( q.get() );
+	CHECK( !strcmp( CoopInQ_Front( q.get() ), "b" ) );
+	CoopInQ_Pop( q.get() );
+	CHECK( CoopInQ_Front( q.get() ) == nullptr );
+	CoopInQ_Pop( q.get() );	// popping an empty queue is harmless
+	CHECK( CoopInQ_Front( q.get() ) == nullptr );
+}
+COOP_TEST( inq_full_rejects_until_popped ) {
+	auto q = NewInQ();
+	for ( int i = 0; i < COOP_MAX_INBOUND; i++ ) CHECK( CoopInQ_Push( q.get(), "x" ) );
+	CHECK( CoopInQ_Full( q.get() ) );
+	CHECK( !CoopInQ_Push( q.get(), "y" ) );
+	CoopInQ_Pop( q.get() );
+	CHECK( !CoopInQ_Full( q.get() ) );
+	CHECK( CoopInQ_Push( q.get(), "y" ) );
+}
+COOP_TEST( inq_wraps_around ) {
+	auto q = NewInQ();
+	char text[16];
+	for ( int i = 0; i < 3 * COOP_MAX_INBOUND; i++ ) {
+		snprintf( text, sizeof( text ), "c%d", i );
+		CHECK( CoopInQ_Push( q.get(), text ) );
+		CHECK( !strcmp( CoopInQ_Front( q.get() ), text ) );
+		CoopInQ_Pop( q.get() );
+	}
+}
+COOP_TEST( inq_rejects_too_long ) {
+	auto q = NewInQ();
+	std::string longCmd( COOP_MAX_RELIABLE_LEN, 'x' );
+	CHECK( !CoopInQ_Push( q.get(), longCmd.c_str() ) );
+	CHECK( CoopInQ_Front( q.get() ) == nullptr );
 }

@@ -16,3 +16,17 @@ int			CoopRel_PendingCount( const coopReliable_t *r );
 const char	*CoopRel_Pending( const coopReliable_t *r, int index, int *seq );
 bool		CoopRel_Accept( coopReliable_t *r, int seq );
 int			CoopRel_FreeSlots( const coopReliable_t *r );		// how many more commands CoopRel_Add accepts
+
+#define COOP_MAX_INBOUND		128
+
+struct coopInQueue_t {			// reliable commands received in Com_EventLoop, executed later by Coop_Frame
+	int		head;
+	int		count;
+	char	cmds[COOP_MAX_INBOUND][COOP_MAX_RELIABLE_LEN];
+};
+
+void		CoopInQ_Init( coopInQueue_t *q );
+bool		CoopInQ_Push( coopInQueue_t *q, const char *cmd );		// false: full or too long
+bool		CoopInQ_Full( const coopInQueue_t *q );
+const char	*CoopInQ_Front( const coopInQueue_t *q );				// nullptr when empty
+void		CoopInQ_Pop( coopInQueue_t *q );

@@ -11,6 +11,7 @@
 #define COOP_CONNECT_TIMEOUT_MS		15000
 #define COOP_PACKET_INTERVAL_MS		33
 #define COOP_MIN_TIMEOUT_SEC		5
+#define COOP_LOAD_TIMEOUT_MS		120000		// link timeout while either side loads a map (SV_SpawnServer + cgame media)
 // MSG_ReadString stops at MAX_STRING_CHARS-1 chars without consuming the NUL, so 1022 is the longest string that round-trips
 #define COOP_MAX_WIRE_CMD_LEN		( MAX_STRING_CHARS - 2 )
 // MSG_WriteBits refuses to write when fewer than 4 bytes are left (msg.cpp:113), so coop_eof needs 4
@@ -31,6 +32,11 @@ typedef struct {
 	coopReliable_t	rel;
 	int				testPending;		// bytes of a coop_test payload to send in the next packet
 	int				testRepeats;		// how many more packets carry the coop_test payload
+	qboolean		localLoading;		// we sent "loading" (or are loading) and our client is not in the game yet
+	qboolean		peerLoading;		// the peer said "loading": its timeout is paused until "loaded"
+	int				peerLoadingSince;
+	qboolean		onLinkPending;		// coop_onlink must run
+	coopInQueue_t	inQueue;			// received reliable commands, executed by Coop_Frame
 } coopLink_t;
 
 extern coopLink_t	coop;
@@ -42,6 +48,10 @@ enum { coop_bad, coop_eof, coop_reliable, coop_snapshot /*M3*/, coop_snapack /*M
 static inline int Coop_MsgRoom( const msg_t *msg ) {
 	return msg->maxsize - COOP_MSG_TAIL - msg->cursize;
 }
+
+void		Coop_FlushNow( void );						// sends the pending reliables right away (before a blocking load)
+qboolean	Coop_LocalMapRunning( void );				// the local server runs a map (SS_GAME)
+qboolean	Coop_LocalMapReady( void );					// ... and the local client is in the game (CS_ACTIVE)
 
 void		Coop_OnLinkUp( void );
 void		Coop_OnLinkDown( const char *reason );
