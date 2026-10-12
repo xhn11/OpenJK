@@ -994,7 +994,7 @@ void WriteLevel(qboolean qbAutosave)
 	{
 		// write out one client - us!
 		//
-		assert(level.maxclients == 1);	// I'll need to know if this changes, otherwise I'll need to change the way ReadGame works
+		assert(level.maxclients >= 1);	// only client 0 is saved; the coop partner's state is saved from M10
 		gclient_t client = level.clients[0];
 		EnumerateFields(savefields_gClient, &client, INT_ID('G','C','L','I'));
 		WriteLevelLocals();	// level_locals_t level
@@ -1056,7 +1056,7 @@ void ReadLevel(qboolean qbAutosave, qboolean qbLoadTransition)
 	{
 		if (!qbAutosave )//always load the client unless it's an autosave
 		{
-			assert(level.maxclients == 1);	// I'll need to know if this changes, otherwise I'll need to change the way things work
+			assert(level.maxclients >= 1);	// only client 0 is saved; the coop partner's state is saved from M10
 
 			gclient_t GClient;
 			EvaluateFields(savefields_gClient, &GClient, &level.clients[0], INT_ID('G','C','L','I'));

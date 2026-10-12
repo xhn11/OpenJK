@@ -29,6 +29,7 @@ along with this program; if not, see <http://www.gnu.org/licenses/>.
 #include "g_functions.h"
 #include "g_nav.h"
 #include "g_icarus.h"
+#include "g_coop.h"
 #include "b_local.h"
 #include "anims.h"
 #include "../../code/rd-common/mdx_format.h"
@@ -729,29 +730,51 @@ angles and bad trails.
 */
 gentity_t *G_Spawn( void )
 {
-	int			i, force;
+	int			first, last;
+	qboolean	topDown;
 	gentity_t	*e;
 
-	e = NULL;	// shut up warning
-	i = 0;		// shut up warning
-	for ( force = 0 ; force < 2 ; force++ )
+	// coop: the guest allocates top-down after the map load, so its own entities stay away from the
+	// host's bottom-up ones (code/coop/coop_entnum.h); everybody else allocates like vanilla
+	G_CoopSpawnRange( &first, &last, &topDown );
+	if ( topDown )
 	{
-		// if we go through all entities and can't find one to free,
-		// override the normal minimum times before use
-		e = &g_entities[MAX_CLIENTS];
-//		for ( i = MAX_CLIENTS ; i<globals.num_entities ; i++, e++)
-//		{
-//			if ( e->inuse )
-//			{
-//				continue;
-//			}
-		for ( i = MAX_CLIENTS ; i<globals.num_entities ; i++)
+		for ( int force = 0 ; force < 2 ; force++ )
 		{
-			if(PInUse(i))
+			for ( int i = last - 1 ; i >= first ; i-- )
+			{
+				if ( i < globals.num_entities && PInUse( i ) )
+				{
+					continue;
+				}
+				e = &g_entities[i];
+				// like vanilla, don't reuse a slot freed less than a second ago unless we must
+				if ( !force && i < globals.num_entities && e->freetime > 2000 && level.time - e->freetime < 1000 )
+				{
+					continue;
+				}
+				if ( i >= globals.num_entities )
+				{
+					globals.num_entities = i + 1;
+				}
+				G_InitGentity( e );
+				return e;
+			}
+		}
+		G_Error( "G_Spawn: no free entities (guest, top-down)" );
+		return NULL;
+	}
+
+	for ( int force = 0 ; force < 2 ; force++ )
+	{
+		const int scanEnd = globals.num_entities < last ? globals.num_entities : last;
+		for ( int i = first ; i < scanEnd ; i++ )
+		{
+			if ( PInUse( i ) )
 			{
 				continue;
 			}
-			e=&g_entities[i];
+			e = &g_entities[i];
 
 			// the first couple seconds of server time can involve a lot of
 			// freeing and allocating, so relax the replacement policy
@@ -763,49 +786,25 @@ gentity_t *G_Spawn( void )
 			G_InitGentity( e );
 			return e;
 		}
-		e=&g_entities[i];
-		if ( i != ENTITYNUM_MAX_NORMAL )
-		{
-			break;
+		if ( !force )
+		{// like vanilla, open a never used slot before reusing one freed less than a second ago
+			const int slot = globals.num_entities > first ? globals.num_entities : first;
+			if ( slot < last )
+			{
+				globals.num_entities = slot + 1;
+				e = &g_entities[slot];
+				G_InitGentity( e );
+				return e;
+			}
 		}
 	}
-	if ( i == ENTITYNUM_MAX_NORMAL )
+	int inUse = 0;
+	for ( int i = 0 ; i < globals.num_entities ; i++ )
 	{
-/*
-		e = &g_entities[0];
-
-//--------------Use this to dump directly to a file
-		char buff[256];
-		FILE *fp;
-
-		fp = fopen( "c:/dump.txt", "w" );
-		for ( i = 0 ; i<globals.num_entities ; i++, e++)
-		{
-			if ( e->classname )
-			{
-				sprintf( buff, "%d: %s\n", i, e->classname );
-			}
-
-			fputs( buff, fp );
-		}
-		fclose( fp );
-//---------------Or use this to dump to the console -- beware though, the console will fill quickly and you probably won't see the full list
-		for ( i = 0 ; i<globals.num_entities ; i++, e++)
-		{
-			if ( e->classname )
-			{
-				Com_Printf( "%d: %s\n", i, e->classname );
-
-			}
-		}
-*/
-		G_Error( "G_Spawn: no free entities" );
+		inUse += PInUse( i ) ? 1 : 0;
 	}
-
-	// open up a new slot
-	globals.num_entities++;
-	G_InitGentity( e );
-	return e;
+	G_Error( "G_Spawn: no free entities (range %d-%d, %d of %d in use)", first, last - 1, inUse, globals.num_entities );
+	return NULL;
 }
 
 

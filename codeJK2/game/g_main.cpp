@@ -32,6 +32,7 @@ along with this program; if not, see <http://www.gnu.org/licenses/>.
 #include "b_local.h"
 #include "anims.h"
 #include "g_icarus.h"
+#include "g_coop.h"
 #include "objectives.h"
 #include "../cgame/cg_local.h"	// yeah I know this is naughty, but we're shipping soon...
 #include "time.h"
@@ -626,6 +627,7 @@ void InitGame(  const char *mapname, const char *spawntarget, int checkSum, cons
 	srand( randomSeed );
 
 	G_InitCvars();
+	G_CoopInitGame();
 
 	G_InitMemory();
 
@@ -651,7 +653,7 @@ void InitGame(  const char *mapname, const char *spawntarget, int checkSum, cons
 	globals.gentities = g_entities;
 	ClearAllInUse();
 	// initialize all clients for this game
-	level.maxclients = 1;
+	level.maxclients = MAX_CLIENTS;	// coop: client 1 is the partner (M4), only client 0 is saved
 	level.clients = (gclient_t *) G_Alloc( level.maxclients * sizeof(level.clients[0]) );
 	memset(level.clients, 0, level.maxclients * sizeof(level.clients[0]));
 

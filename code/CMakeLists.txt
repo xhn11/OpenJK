@@ -169,6 +169,7 @@ if(BuildSPEngine OR BuildJK2SPEngine)
 		"${SPDir}/qcommon/net_chan.cpp"
 		"${SPDir}/qcommon/net_ip.cpp"
 		"${SPDir}/coop/coop_adr.cpp"
+		"${SPDir}/coop/coop_entnum.cpp"
 		"${SPDir}/coop/coop_link.cpp"
 		"${SPDir}/coop/coop_netchan.cpp"
 		"${SPDir}/coop/coop_netsim.cpp"

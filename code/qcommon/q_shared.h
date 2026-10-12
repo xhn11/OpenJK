@@ -615,7 +615,11 @@ typedef struct {
 //
 // per-level limits
 //
+#ifdef JK2_MODE
+#define	MAX_CLIENTS			2		// coop: entity 0 = local player, entity 1 = partner (code/coop)
+#else
 #define	MAX_CLIENTS			1 // 128		// absolute limit
+#endif
 #define MAX_TERRAINS		1 //32
 
 #define	GENTITYNUM_BITS		10		// don't need to send any more

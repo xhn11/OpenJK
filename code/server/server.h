@@ -314,7 +314,11 @@ void SG_TestSave(void);
 // What it's used for is for things like mission pack etc if we need to distinguish "street-copy" savegames from
 //	any new enhanced ones that need to ask for new chunks during loading.
 //
+#ifdef JK2_MODE
+#define iSAVEGAME_VERSION 2		// 2: coop build, MAX_CLIENTS 2 moves the configstring indices
+#else
 #define iSAVEGAME_VERSION 1
+#endif
 int SG_Version(void);	// call this to know what version number a successfully-opened savegame file was
 //
 extern SavedGameJustLoaded_e eSavedGameJustLoaded;
