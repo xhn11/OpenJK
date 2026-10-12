@@ -5,7 +5,7 @@
 #include "coop_reliable.h"
 #include "coop_netchan.h"
 
-#define COOP_PROTOCOL_VERSION		2			// 2: coop netchan (no qport, 1200-byte fragments)
+#define COOP_PROTOCOL_VERSION		3			// 3: loading/loaded, coop_map/coop_ready
 #define COOP_DEFAULT_PORT			29170
 #define COOP_CONNECT_RESEND_MS		1000
 #define COOP_CONNECT_TIMEOUT_MS		15000
@@ -58,3 +58,10 @@ void		Coop_OnLinkDown( const char *reason );
 void		Coop_WritePayload( msg_t *msg );			// write only what Coop_MsgRoom( msg ) allows
 qboolean	Coop_ParsePayload( int cmd, msg_t *msg );
 qboolean	Coop_ExecuteReliableCmd( const char *cmd );
+// coop_session.cpp
+void		Coop_SessionInit( void );
+void		Coop_SessionFrame( void );					// Coop_Frame, after the inbound commands
+void		Coop_SessionMapLoaded( void );				// Coop_MapLoadFinished
+int			Coop_MapGen( void );						// host: running map's generation; guest: generation from coop_map
+qboolean	Coop_GuestInWorld( void );					// guest: in the host's map, client in game, coop_ready sent
+qboolean	Coop_HostGuestInWorld( void );				// host: the guest confirmed the running map

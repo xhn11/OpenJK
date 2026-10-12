@@ -150,10 +150,10 @@ static void Coop_LinkUp( netadr_t from ) {
 
 static void Coop_ReloadMap_f( void ) {
 	if ( !Coop_LocalMapRunning() ) {
-		Com_Printf( "COOP: no map is running\n" );
+		Com_Printf( "COOP: no map is running\n" );
 		return;
 	}
-	Cbuf_AddText( va( "%s %s\n", Cvar_VariableIntegerValue( "helpUsObi" ) ? "devmap" : "map", sv_mapname->string ) );
+	Cbuf_AddText( va( "%s %s\n", Cvar_VariableIntegerValue( "helpUsObi" ) ? "devmap" : "map", sv_mapname->string ) );
 }
 
 static void Coop_Host_f( void ) {
@@ -310,10 +310,10 @@ static void Coop_ExecuteReliable( const char *s ) {
 	} else if ( !Q_stricmp( c, "loading" ) ) {
 		coop.peerLoading = qtrue;
 		coop.peerLoadingSince = Sys_Milliseconds();
-		Com_Printf( "COOP: peer is loading a map\n" );
+		Com_Printf( "COOP: peer is loading a map\n" );
 	} else if ( !Q_stricmp( c, "loaded" ) ) {
 		coop.peerLoading = qfalse;
-		Com_Printf( "COOP: peer finished loading\n" );
+		Com_Printf( "COOP: peer finished loading\n" );
 	} else if ( !Coop_ExecuteReliableCmd( s ) && coop_debug->integer ) {
 		Com_Printf( "COOP: unknown reliable command \"%s\"\n", c );
 	}
@@ -440,11 +440,12 @@ void Coop_MapLoadStarting( void ) {
 	}
 	Coop_AddReliable( "loading" );
 	Coop_FlushNow();
-	Com_Printf( "COOP: map load started, peer notified\n" );
+	Com_Printf( "COOP: map load started, peer notified\n" );
 }
 
 void Coop_MapLoadFinished( void ) {
 	coop.lastReceived = Sys_Milliseconds();	// nothing could be received during the synchronous load
+	Coop_SessionMapLoaded();
 }
 
 void Coop_Frame( void ) {
@@ -455,7 +456,7 @@ void Coop_Frame( void ) {
 		coop.localLoading = qfalse;
 		if ( coop.state == COOP_LINK_ACTIVE ) {
 			Coop_AddReliable( "loaded" );
-			Com_Printf( "COOP: map loaded, peer notified\n" );
+			Com_Printf( "COOP: map loaded, peer notified\n" );
 		}
 	}
 	if ( coop.state == COOP_LINK_CONNECTING ) {
@@ -479,8 +480,9 @@ void Coop_Frame( void ) {
 	}
 	if ( coop.onLinkPending ) {
 		coop.onLinkPending = qfalse;
-		Cbuf_AddText( va( "%s\n", coop_onlink->string ) );
+		Cbuf_AddText( va( "%s\n", coop_onlink->string ) );
 	}
+	Coop_SessionFrame();
 	int timeoutMs = ( coop_timeout->integer < COOP_MIN_TIMEOUT_SEC ? COOP_MIN_TIMEOUT_SEC : coop_timeout->integer ) * 1000;
 	if ( coop.localLoading || ( coop.peerLoading && now - coop.peerLoadingSince < COOP_LOAD_TIMEOUT_MS ) ) {
 		timeoutMs = COOP_LOAD_TIMEOUT_MS;
@@ -512,6 +514,7 @@ void Coop_Init( void ) {
 	Cmd_AddCommand( "coop_say", Coop_Say_f );
 	Cmd_AddCommand( "coop_sendtest", Coop_SendTest_f );
 	Cmd_AddCommand( "coop_reloadmap", Coop_ReloadMap_f );
+	Coop_SessionInit();
 	Coop_Reset( COOP_ROLE_NONE, COOP_LINK_IDLE );
 }
 

@@ -61,7 +61,8 @@ function Test-Log([string]$name, [string[]]$patterns, [string[]]$rejects) {
   $text = Get-Content $log.FullName -Raw
   $ok = $true
   if ($text -match 'Failed to load jospgame') { Write-Host "[FAIL] ${name}: game DLL failed to load"; $ok = $false }
-  if ($name -eq "host") { $patterns = @('------- Game Initialization -------') + $patterns }
+  # from M3 on the guest loads the host's map too, so both must have loaded the game DLL
+  $patterns = @('------- Game Initialization -------') + $patterns
   foreach ($p in $patterns) {
     if ($text -match $p) { Write-Host "[PASS] $name ~ $p" } else { Write-Host "[FAIL] $name missing: $p"; $ok = $false }
   }
