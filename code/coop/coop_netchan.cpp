@@ -88,6 +88,9 @@ qboolean CoopNetchan_Process( coopNetchan_t *chan, msg_t *msg ) {
 	int			fragmentStart = 0, fragmentLength = 0;
 	qboolean	fragmented = qfalse;
 
+	if ( msg->cursize < 8 ) {
+		return qfalse;	// truncated header; would otherwise read as sequence -1 and reset a pending reassembly
+	}
 	MSG_BeginReading( msg );
 	int sequence = MSG_ReadLong( msg );
 	const int sequence_ack = MSG_ReadLong( msg );
