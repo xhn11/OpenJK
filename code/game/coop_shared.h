@@ -4,7 +4,7 @@
 // Include after q_shared.h (entityState_t, playerState_t).
 #include <type_traits>
 
-#define COOP_EXTRA_VERSION	3
+#define COOP_EXTRA_VERSION	4
 
 typedef enum {
 	COOP_OWNER_NONE		= -1,	// free slot
@@ -30,6 +30,7 @@ typedef struct coopEntExtra_s {
 	int		buttons;				// clients: usercmd buttons (BUTTON_USE triggers on the other machine)
 	int		saberInFlight;			// clients: the thrown saber's place (design 16: sent every frame)
 	float	saberOrigin[3], saberAngles[3];
+	int		itemTaken;				// weapon items: bit ( 1 << coopOwner_t ) per player who took it (design 19: per player)
 } coopEntExtra_t;
 
 static_assert( std::is_trivially_copyable<coopEntExtra_t>::value, "coopEntExtra_t is replicated raw" );

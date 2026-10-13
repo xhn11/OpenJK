@@ -109,17 +109,64 @@ static void G_CoopCmd_Use( void ) {
 }
 
 // ---------------------------------------------------------------- items (design 19)
-// The host decides: the puppet touches items on the host like the guest's player would. Weapons and
-// keys go to both players (both would have to pick them up anyway), the rest to who touched it.
+// The item's owner decides (the host for map items): the partner's puppet touches it there like the
+// partner's player would. Weapons are per player: each player takes every weapon once, it stays for the
+// other, and only the one who took it no longer sees it. Keys go to both players, the rest to who touched it.
+
+static byte	g_coopItemTaken[MAX_GENTITIES];	// weapon items: bit ( 1 << coop mode ) = that machine's player took it
+static int	g_coopLastDropped = -1;			// testing: the last coop_dropitem, or (the receiver) the last weapon the partner decided
 
 qboolean G_CoopSharedItem( const gitem_t *item ) {
-	return (qboolean)( item->giType == IT_WEAPON
-		|| ( item->giType == IT_HOLDABLE && ( item->giTag == INV_SECURITY_KEY || item->giTag == INV_GOODIE_KEY ) ) );
+	return (qboolean)( item->giType == IT_HOLDABLE && ( item->giTag == INV_SECURITY_KEY || item->giTag == INV_GOODIE_KEY ) );
+}
+
+static int G_CoopTakerBit( const gentity_t *player ) {
+	return 1 << ( G_CoopOwnsEnt( player ) ? g_coopMode : G_CoopPartnerMode() );
+}
+
+static qboolean G_CoopPerPlayerItem( const gentity_t *item, const gentity_t *taker ) {
+	return (qboolean)( g_coopMode != COOP_MODE_SOLO && item->item && item->item->giType == IT_WEAPON
+		&& taker->s.number < MAX_CLIENTS );	// an NPC picking a weapon up takes it away for both
+}
+
+void G_CoopItemReset( int num ) {
+	g_coopItemTaken[num] = 0;
+}
+
+// replication: the item's owner knows who took it (G_Coop_GetEntityExtra / G_Coop_ApplyEntity)
+int G_CoopItemTakenBits( int num ) {
+	return g_coopItemTaken[num];
+}
+
+void G_CoopItemSetTakenBits( int num, int bits ) {
+	g_coopItemTaken[num] |= (byte)bits;	// ours may be ahead: the partner's "pickup" can come before its snapshot
+	if ( bits & ( 1 << g_coopMode ) ) {
+		g_coopLastDropped = num;
+	}
+}
+
+qboolean G_CoopItemTakenBy( const gentity_t *item, const gentity_t *player ) {
+	return (qboolean)( G_CoopPerPlayerItem( item, player ) && ( g_coopItemTaken[item->s.number] & G_CoopTakerBit( player ) ) );
+}
+
+// player took the item: *first = nobody had taken it before; qtrue = it can go (a weapon: both players have it)
+qboolean G_CoopItemTake( const gentity_t *item, const gentity_t *player, qboolean *first ) {
+	*first = (qboolean)( g_coopItemTaken[item->s.number] == 0 );
+	if ( !G_CoopPerPlayerItem( item, player ) ) {
+		return qtrue;
+	}
+	g_coopItemTaken[item->s.number] |= G_CoopTakerBit( player );
+	return (qboolean)( g_coopItemTaken[item->s.number] == ( ( 1 << COOP_MODE_HOST ) | ( 1 << COOP_MODE_GUEST ) ) );
+}
+
+// cgame: our player took this weapon, it is gone for us
+qboolean G_CoopItemHidden( int num ) {
+	return (qboolean)( g_coopMode != COOP_MODE_SOLO && num >= 0 && num < MAX_GENTITIES && ( g_coopItemTaken[num] & ( 1 << g_coopMode ) ) );
 }
 
 void G_CoopSendPickup( const gentity_t *item ) {
-	G_CoopSend( "pickup %d %d %d %d \"%s\"", (int)( item->item - bg_itemlist ), item->count, item->flags & FL_DROPPED_ITEM,
-		item->spawnflags, item->message ? item->message : "" );
+	G_CoopSend( "pickup %d %d %d %d \"%s\" %d", (int)( item->item - bg_itemlist ), item->count, item->flags & FL_DROPPED_ITEM,
+		item->spawnflags, item->message ? item->message : "", G_CoopWireEnt( item ) );
 }
 
 static void G_CoopCmd_Pickup( void ) {
@@ -138,9 +185,34 @@ static void G_CoopCmd_Pickup( void ) {
 	tmp.flags = atoi( gi.argv( 4 ) );
 	tmp.spawnflags = atoi( gi.argv( 5 ) );
 	tmp.message = gi.argv( 6 )[0] ? G_NewString( gi.argv( 6 ) ) : NULL;
-	gi.Printf( "COOP: picked up %s (the host decided)\n", tmp.item->classname );
+	gi.Printf( "COOP: picked up %s (the partner decided)\n", tmp.item->classname );
 	G_ItemPickupInto( &tmp, player );
 	G_CoopP2Restrict( player );
+	const gentity_t *item = G_CoopLocalEnt( gi.argv( 7 ), qfalse );	// a replica of a dropped item has no ->item
+	if ( item && item->s.number >= MAX_CLIENTS && tmp.item->giType == IT_WEAPON ) {
+		g_coopItemTaken[item->s.number] |= 1 << g_coopMode;	// the weapon stays for the partner only
+		g_coopLastDropped = item->s.number;
+	}
+}
+
+int G_CoopLastDroppedItem( void ) {
+	return g_coopLastDropped;
+}
+
+// console: coop_dropitem <classname> <x> <y> <z> - drop an item of ours there (testing; coop_entinfo -1 shows it)
+void G_CoopDropItem_f( void ) {
+	extern gentity_t *LaunchItem( gitem_t *item, vec3_t origin, vec3_t velocity, char *target );
+	gitem_t *item = gi.argc() == 5 ? FindItem( gi.argv( 1 ) ) : NULL;
+	if ( !item ) {
+		gi.Printf( "usage: coop_dropitem <classname> <x> <y> <z>\n" );
+		return;
+	}
+	vec3_t origin = { (float)atof( gi.argv( 2 ) ), (float)atof( gi.argv( 3 ) ), (float)atof( gi.argv( 4 ) ) };
+	vec3_t velocity = { 0, 0, 0 };
+	gentity_t *ent = LaunchItem( item, origin, velocity, NULL );
+	ent->e_ThinkFunc = thinkF_NULL;		// stays until taken
+	g_coopLastDropped = ent->s.number;
+	gi.Printf( "COOP: dropped %s as entity %d\n", item->classname, ent->s.number );
 }
 
 // ---------------------------------------------------------------- force push / pull (design 7)
@@ -203,12 +275,24 @@ static void G_CoopCmd_Alert( void ) {
 // ---------------------------------------------------------------- the partner in our world
 
 // host: logical triggers react to the guest's puppet like to a player (design 17); the guest runs
-// the physical ones (push, teleport, hurt) for its own player
+// the physical ones (push, teleport, hurt) for its own player. The guest owns the items dropped by
+// the NPCs that ran on it: the host's player takes them through its puppet there (design 19).
 void G_CoopRunPuppet( gentity_t *ent ) {
-	if ( g_coopMode != COOP_MODE_HOST || ent->s.number != 1 || !ent->client || ent->health <= 0 ) {
+	if ( g_coopMode == COOP_MODE_SOLO || ent->s.number != 1 || !ent->client || ent->health <= 0 ) {
 		return;
 	}
-	G_TouchTriggers( ent );
+	if ( g_coopMode == COOP_MODE_HOST ) {
+		G_TouchTriggers( ent );
+		return;
+	}
+	gentity_t *touch[MAX_GENTITIES];
+	const int num = gi.EntitiesInBox( ent->absmin, ent->absmax, touch, MAX_GENTITIES );
+	for ( int i = 0; i < num; i++ ) {
+		gentity_t *hit = touch[i];
+		if ( hit->inuse && hit->s.eType == ET_ITEM && hit->e_TouchFunc == touchF_Touch_Item && G_CoopOwnsEnt( hit ) ) {
+			GEntity_TouchFunc( hit, ent, NULL );
+		}
+	}
 }
 
 // ---------------------------------------------------------------- dispatcher

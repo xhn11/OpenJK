@@ -479,7 +479,9 @@ void G_CoopNpcCommand( const char *name ) {
 	}
 }
 
-// console: coop_npcinfo - every live NPC's enemy and state, and how the partner looks to them (debugging)
+extern void CG_CoopLerpOrigin( int num, vec3_t out );	// cg_main.cpp
+
+// console: coop_npcinfo - every NPC's enemy and state, where it is drawn, and how the partner looks to them (debugging)
 void G_CoopNpcInfo_f( void ) {
 	extern bool in_camera;
 	const gentity_t *p = &g_entities[1];
@@ -494,14 +496,22 @@ void G_CoopNpcInfo_f( void ) {
 	} else {
 		gi.Printf( "COOP: no partner puppet\n" );
 	}
-	for ( int i = MAX_CLIENTS; i < globals.num_entities; i++ ) {
+	for ( int i = 1; i < globals.num_entities; i++ ) {
 		const gentity_t *ent = &g_entities[i];
-		if ( !ent->inuse || !ent->NPC || !ent->client || ent->health <= 0 ) {
+		if ( !ent->inuse || !ent->client ) {
 			continue;
 		}
-		gi.Printf( "COOP: npc %d %s owner %d team %d enemyTeam %d enemy %d bState %d scriptFlags 0x%x dist0 %.0f dist1 %.0f at %.0f %.0f %.0f\n",
-			i, ent->NPC_type, G_CoopOwner( ent ), ent->client->playerTeam, ent->client->enemyTeam,
-			ent->enemy ? ent->enemy->s.number : -1, ent->NPC->behaviorState, ent->NPC->scriptFlags,
+		vec3_t drawn;
+		CG_CoopLerpOrigin( i, drawn );
+		gi.Printf( "COOP: draw %d %s at %.0f %.0f %.0f eye %.0f %.0f %.0f client %d\n", i, ent->NPC_type, drawn[0], drawn[1], drawn[2],
+			ent->client->renderInfo.eyePoint[0], ent->client->renderInfo.eyePoint[1], ent->client->renderInfo.eyePoint[2],
+			ent->client == &level.clients[1] ? 1 : ent->client == &level.clients[0] ? 0 : -1 );
+		if ( i < MAX_CLIENTS ) {
+			continue;
+		}
+		gi.Printf( "COOP: npc %d %s health %d eFlags 0x%x svFlags 0x%x owner %d team %d enemyTeam %d enemy %d bState %d scriptFlags 0x%x dist0 %.0f dist1 %.0f at %.0f %.0f %.0f\n",
+			i, ent->NPC_type, ent->health, ent->s.eFlags, ent->svFlags, G_CoopOwner( ent ), ent->client->playerTeam, ent->client->enemyTeam,
+			ent->enemy ? ent->enemy->s.number : -1, ent->NPC ? ent->NPC->behaviorState : -1, ent->NPC ? ent->NPC->scriptFlags : 0,
 			Distance( ent->currentOrigin, g_entities[0].currentOrigin ), p->inuse ? Distance( ent->currentOrigin, p->currentOrigin ) : -1.0f,
 			ent->currentOrigin[0], ent->currentOrigin[1], ent->currentOrigin[2] );
 	}

@@ -629,11 +629,19 @@ void Touch_Item (gentity_t *ent, gentity_t *other, trace_t *trace) {
 		gi.Printf( "Touch_Item: %s is not an item!\n", ent->classname);
 		return;
 	}
+	if ( g_coopMode != COOP_MODE_SOLO && !G_CoopOwnsEnt( ent ) )
+	{//coop: the partner's item, its machine decides through our puppet there (design 19)
+		return;
+	}
+	if ( G_CoopItemTakenBy( ent, other ) )
+	{//coop: this player already has this weapon, it stays for the other one
+		return;
+	}
 	if ( g_coopMode != COOP_MODE_SOLO && !G_CoopOwnsEnt( other ) )
-	{//coop host: the guest's puppet touched it, the guest takes it (design 19)
+	{//coop: the partner's puppet touched it, the partner takes it (design 19)
 		G_CoopSendPickup( ent );
 		if ( G_CoopSharedItem( ent->item ) && g_entities[0].inuse && g_entities[0].health > 0 )
-		{//weapons and keys: we get them too
+		{//keys: we get them too
 			G_ItemPickupInto( ent, &g_entities[0] );
 		}
 	}
@@ -644,13 +652,26 @@ void Touch_Item (gentity_t *ent, gentity_t *other, trace_t *trace) {
 			return;
 		}
 		if ( other->s.number == 0 && G_CoopSharedItem( ent->item ) )
-		{//coop: the partner gets weapons and keys too
+		{//coop: the partner gets keys too
 			G_CoopSendPickup( ent );
 		}
 	}
 
+	qboolean firstTaker;
+	if ( !G_CoopItemTake( ent, other, &firstTaker ) )
+	{//coop: a weapon the other player has not taken yet stays (hidden for this one)
+		if ( firstTaker )
+		{
+			G_UseTargets( ent, other );
+		}
+		return;
+	}
+
 	// fire item targets
-	G_UseTargets (ent, other);
+	if ( firstTaker )
+	{
+		G_UseTargets (ent, other);
+	}
 
 	// wait of -1 will not respawn
 //	if ( ent->wait == -1 )

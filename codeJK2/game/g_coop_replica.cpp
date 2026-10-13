@@ -53,6 +53,7 @@ void G_Coop_GetEntityExtra( int entNum, coopEntExtra_t *out ) {
 	out->areaPortalOpen = G_CoopPortalCount( entNum );
 	out->triggerEnabled = ( ent->svFlags & SVF_INACTIVE ) ? 0 : 1;
 	out->buttons = ent->client ? ent->client->usercmd.buttons : 0;
+	out->itemTaken = G_CoopItemTakenBits( entNum );
 	if ( ent->client && ent->client->ps.saberInFlight && ent->client->ps.saberEntityNum > 0
 		&& ent->client->ps.saberEntityNum < ENTITYNUM_WORLD && g_entities[ent->client->ps.saberEntityNum].inuse ) {
 		const gentity_t *saber = &g_entities[ent->client->ps.saberEntityNum];
@@ -295,6 +296,7 @@ void G_Coop_ApplyEntity( int entNum, const entityState_t *es, const playerState_
 		ent->client->usercmd.buttons = ex->buttons;
 	}
 	ent->spawnflags = ex->spawnflags;
+	G_CoopItemSetTakenBits( entNum, ex->itemTaken );
 	ent->health = ex->health;
 	ent->max_health = ex->maxHealth;
 	ent->flags = ex->flags;

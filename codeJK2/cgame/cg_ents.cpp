@@ -876,6 +876,11 @@ Ghoul2 Insert Start
 	{
 		return;
 	}
+extern qboolean G_CoopItemHidden( int num );
+	if ( G_CoopItemHidden( es->number ) )
+	{//coop: our player took this weapon, it stays for the partner only (design 19)
+		return;
+	}
 /*
 Ghoul2 Insert End
 */

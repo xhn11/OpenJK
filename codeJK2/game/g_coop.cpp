@@ -64,6 +64,7 @@ void G_CoopSetOwner( gentity_t *ent, int owner ) {
 void G_CoopEntityInit( gentity_t *ent ) {
 	const int n = G_CoopIndex( ent );
 	g_coopPortal[n] = 0;
+	G_CoopItemReset( n );
 	if ( n < MAX_CLIENTS ) {
 		return;	// set in G_CoopInitGame
 	}
@@ -147,7 +148,7 @@ gentity_t *G_SpawnAtNum( int num ) {
 }
 
 void G_CoopEntInfo_f( void ) {
-	const int num = atoi( gi.argv( 1 ) );
+	const int num = atoi( gi.argv( 1 ) ) < 0 ? G_CoopLastDroppedItem() : atoi( gi.argv( 1 ) );
 	if ( gi.argc() != 2 || num < 0 || num >= MAX_GENTITIES ) {
 		gi.Printf( "usage: coop_entinfo <entity number>\n" );
 		return;
@@ -155,9 +156,9 @@ void G_CoopEntInfo_f( void ) {
 	coopEntExtra_t ex;
 	G_Coop_GetEntityExtra( num, &ex );
 	const gentity_t *ent = &g_entities[num];
-	gi.Printf( "COOP: entinfo %d owner %d class %s npc \"%s\" linked %d portal %d health %d origin %.0f %.0f %.0f\n",
+	gi.Printf( "COOP: entinfo %d owner %d class %s npc \"%s\" linked %d portal %d health %d origin %.0f %.0f %.0f hidden %d\n",
 		num, G_Coop_EntityOwner( num ), ex.inuse ? ex.classname : "(free)", ex.npcType, ex.linked, ex.areaPortalOpen, ex.health,
-		ent->currentOrigin[0], ent->currentOrigin[1], ent->currentOrigin[2] );
+		ent->currentOrigin[0], ent->currentOrigin[1], ent->currentOrigin[2], G_CoopItemHidden( num ) );
 }
 
 #define COOP_MAX_PORTAL_STEPS	8

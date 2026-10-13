@@ -50,7 +50,13 @@ void		G_CoopGTest_f( void );									// console: coop_gtest <text>
 void		G_CoopForwardDamage( gentity_t *targ, gentity_t *inflictor, gentity_t *attacker, const vec3_t dir,
 				const vec3_t point, int damage, int dflags, int mod, int hitLoc );	// G_Damage on a target we do not own
 qboolean	G_CoopForwardUse( gentity_t *self, gentity_t *other, gentity_t *activator );	// qtrue: not ours, sent / dropped
-qboolean	G_CoopSharedItem( const gitem_t *item );				// weapons and keys: both players get them
+qboolean	G_CoopSharedItem( const gitem_t *item );				// keys: both players get them
+qboolean	G_CoopItemTakenBy( const gentity_t *item, const gentity_t *player );	// weapons: this player has taken it
+qboolean	G_CoopItemTake( const gentity_t *item, const gentity_t *player, qboolean *first );	// qtrue: the item can go
+qboolean	G_CoopItemHidden( int num );							// cgame: our player took this weapon
+void		G_CoopItemReset( int num );								// a new entity in this slot
+int			G_CoopItemTakenBits( int num );							// replication of who took a weapon item
+void		G_CoopItemSetTakenBits( int num, int bits );
 void		G_CoopSendPickup( const gentity_t *item );				// the partner gets this item
 qboolean	G_CoopForwardThrow( gentity_t *self, gentity_t *target, qboolean pull );	// qtrue: the target's owner pushes it
 void		G_CoopForwardAlert( int type, const gentity_t *owner, const vec3_t pos, float radius, int alertLevel, float extra );	// AddSound/SightEvent
@@ -118,3 +124,5 @@ void		G_CoopTriggerFrame( void );								// G_RunFrame (host): physical triggers
 void		G_CoopCenterPrint( const char *text );					// local only: coop messages (Czech, no diacritics: the fonts lack them)
 void		G_CoopNpcInfo_f( void );								// console: coop_npcinfo
 void		G_CoopDropPuppet_f( void );								// console: coop_droppuppet (testing)
+void		G_CoopDropItem_f( void );								// console: coop_dropitem <classname> <x> <y> <z> (testing)
+int			G_CoopLastDroppedItem( void );						// the entity of the last coop_dropitem, -1: none

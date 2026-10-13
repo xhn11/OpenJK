@@ -13,7 +13,7 @@ Ke každému bodu si poznamenej OK nebo co je špatně (případně s `qconsole.
 4. Guest zastřelí stormtroopera. Host vidí, jak padá.
 5. Trooper hosta střílí na guesta a guestovi ubývá zdraví.
 6. Guest otevře dveře tlačítkem a host je vidí otevřené.
-7. Guest sebere munici nebo lékárničku a u hosta zmizí. Zbraň sebraná jedním hráčem připadne oběma.
+7. Guest sebere munici nebo lékárničku a u hosta zmizí. Zbraň, kterou guest sebere (třeba blaster po trooperovi), host nedostane. Host ji dál vidí ležet a může ji sebrat sám.
 8. Nepřítel, který bojuje s guestem, se u guesta hýbe plynule. `coop_npcs` u hosta ukazuje, kolik NPC běží u guesta.
 9. Hráči se navzájem nezraní.
 

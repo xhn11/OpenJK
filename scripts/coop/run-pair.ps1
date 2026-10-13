@@ -15,7 +15,8 @@ param(
   [string[]]$RejectGuest = @(),
   [switch]$NoGuest,
   [switch]$GuestNoMap,	# the guest never loads a map (e.g. only coop_find): skip its game DLL check
-  [switch]$Visible
+  [switch]$Visible,
+  [int]$Port = 29190	# not the default 29170: automated runs must never meet the games the user plays (play-pair.ps1)
 )
 $ErrorActionPreference = "Stop"
 . "$PSScriptRoot\layout.ps1"
@@ -32,7 +33,7 @@ New-Item -ItemType Directory -Force "$work\host", "$work\guest" | Out-Null
 
 function Start-Instance([string]$name, [int]$slot, [string[]]$extra) {
   $display = if ($Visible) { Get-WindowArgs $slot } else { Get-HeadlessArgs }
-  $argLine = "+set fs_basepath `"$base`" +set fs_cdpath `"$bin`" +set fs_homepath `"$work\$name`" +set logfile 2 " + $display + " " + ($extra -join " ")
+  $argLine = "+set fs_basepath `"$base`" +set fs_cdpath `"$bin`" +set fs_homepath `"$work\$name`" +set logfile 2 +set coop_port $Port " + $display + " " + (($extra -join " ") -replace "29170", "$Port")
   Start-Process -FilePath $exe -ArgumentList $argLine -WorkingDirectory $bin -PassThru
 }
 

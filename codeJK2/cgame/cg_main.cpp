@@ -3846,3 +3846,8 @@ static void CG_RunCinematicFrame(int handle) {
 
 
 
+// coop: where this cgame draws an entity (coop_npcinfo debugging)
+void CG_CoopLerpOrigin( int num, vec3_t out )
+{
+	VectorCopy( cg_entities[num].lerpOrigin, out );
+}

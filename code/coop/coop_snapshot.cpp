@@ -166,11 +166,17 @@ static void CoopSnapshot_SwapEntityState( entityState_t *s ) {
 	s->clientNum = Coop_SwapEntNum( s->clientNum );
 }
 
+// viewEntity and saberEntityNum use 0 for "none" (an NPC without a saber has 0): swapped, "none" would
+// name the partner's puppet, and an NPC run here would carry the puppet around as its saber
+static int CoopSnapshot_SwapEntNumOrNone( int n ) {
+	return n == 0 ? 0 : Coop_SwapEntNum( n );
+}
+
 static void CoopSnapshot_SwapPlayerState( playerState_t *ps ) {
 	ps->clientNum = Coop_SwapEntNum( ps->clientNum );
 	ps->groundEntityNum = Coop_SwapEntNum( ps->groundEntityNum );
-	ps->viewEntity = Coop_SwapEntNum( ps->viewEntity );
-	ps->saberEntityNum = Coop_SwapEntNum( ps->saberEntityNum );
+	ps->viewEntity = CoopSnapshot_SwapEntNumOrNone( ps->viewEntity );
+	ps->saberEntityNum = CoopSnapshot_SwapEntNumOrNone( ps->saberEntityNum );
 	ps->saberLockEnemy = Coop_SwapEntNum( ps->saberLockEnemy );
 	ps->forceGripEntityNum = Coop_SwapEntNum( ps->forceGripEntityNum );
 	ps->saberModel = NULL;		// a pointer into our memory; the receiver keeps its own (plan-M3 R1)
