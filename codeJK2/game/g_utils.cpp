@@ -1190,6 +1190,9 @@ void G_SetActiveState(char *targetstring, qboolean actState)
 
 void target_activate_use(gentity_t *self, gentity_t *other, gentity_t *activator)
 {
+	if ( g_coopMode != COOP_MODE_SOLO ) {
+		gi.Printf( "COOP: %s activates %s (by %d)\n", self->targetname ? self->targetname : "-", self->target ? self->target : "-", activator ? activator->s.number : -1 );
+	}
 	G_ActivateBehavior(self,BSET_USE);
 
 	G_SetActiveState(self->target, ACT_ACTIVE);
@@ -1197,6 +1200,9 @@ void target_activate_use(gentity_t *self, gentity_t *other, gentity_t *activator
 
 void target_deactivate_use(gentity_t *self, gentity_t *other, gentity_t *activator)
 {
+	if ( g_coopMode != COOP_MODE_SOLO ) {
+		gi.Printf( "COOP: %s deactivates %s (by %d)\n", self->targetname ? self->targetname : "-", self->target ? self->target : "-", activator ? activator->s.number : -1 );
+	}
 	G_ActivateBehavior(self,BSET_USE);
 
 	G_SetActiveState(self->target, ACT_INACTIVE);

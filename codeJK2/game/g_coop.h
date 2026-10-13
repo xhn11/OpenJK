@@ -58,6 +58,9 @@ void		G_CoopItemReset( int num );								// a new entity in this slot
 int			G_CoopItemTakenBits( int num );							// replication of who took a weapon item
 void		G_CoopItemSetTakenBits( int num, int bits );
 void		G_CoopSendPickup( const gentity_t *item );				// the partner gets this item
+qboolean	G_CoopDropPaired( int num );							// a dropped weapon each machine runs a copy of
+void		G_CoopWeaponDropped( gentity_t *dropped );				// host, TossClientItems: the guest drops its copy
+void		G_CoopDropTaken( const gentity_t *item );				// Touch_Item: our player took a paired drop
 qboolean	G_CoopForwardThrow( gentity_t *self, gentity_t *target, qboolean pull );	// qtrue: the target's owner pushes it
 void		G_CoopForwardAlert( int type, const gentity_t *owner, const vec3_t pos, float radius, int alertLevel, float extra );	// AddSound/SightEvent
 void		G_CoopRunPuppet( gentity_t *ent );						// G_RunFrame, entity 1
@@ -129,4 +132,5 @@ void		G_CoopNpcInfo_f( void );								// console: coop_npcinfo
 void		G_CoopDropPuppet_f( void );								// console: coop_droppuppet (testing)
 void		G_CoopNpcMove_f( void );								// console: coop_npcmove <npc> <x> <y> <z> (testing)
 void		G_CoopDropItem_f( void );								// console: coop_dropitem <classname> <x> <y> <z> (testing)
+void		G_CoopGoto_f( void );									// console: coop_goto <entity, -1: last dropped item> (testing)
 int			G_CoopLastDroppedItem( void );						// the entity of the last coop_dropitem, -1: none

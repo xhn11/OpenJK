@@ -4,6 +4,7 @@
 #include "b_local.h"
 #include "g_coop.h"
 #include "wp_saber.h"
+#include "Q3_Interface.h"
 
 // Player 2 (design 11, 12, 15, 22): the guest plays Jan in the missions where Kyle fights without a
 // saber and Luke once Kyle has one - decided by the host at level start from Kyle's weapons. Jan never
@@ -269,6 +270,33 @@ gentity_t *G_CoopStandIn( void ) {
 	return NULL;
 }
 
+// a script sends the hidden stand-in somewhere (kejim_post: Jan into the lift, its NPC trigger starts
+// the lift): nobody sees it walk, so it is there at once and the script goes on
+static void G_CoopStandInToGoal( gentity_t *ent, const vec3_t goal ) {
+	trace_t	tr;
+	vec3_t	start, end;
+	static const float ups[] = { 48, 24, 8, 1 };	// navgoals sit at the floor or a bit above it, under low ceilings too
+	VectorSet( end, goal[0], goal[1], goal[2] - 64 );
+	for ( size_t i = 0; ; i++ ) {
+		if ( i == ARRAY_LEN( ups ) ) {
+			return;
+		}
+		VectorSet( start, goal[0], goal[1], goal[2] + ups[i] - ent->mins[2] );
+		gi.trace( &tr, start, ent->mins, ent->maxs, end, ent->s.number, MASK_NPCSOLID, G2_NOCOLLIDE, 0 );
+		if ( !tr.startsolid && !tr.allsolid && tr.fraction < 1.0f ) {
+			break;
+		}
+	}
+	if ( Distance( tr.endpos, ent->currentOrigin ) < 1.0f ) {
+		return;
+	}
+	gi.Printf( "COOP: hidden %s goes straight to its navgoal (%.0f %.0f %.0f)\n", ent->NPC_type, tr.endpos[0], tr.endpos[1], tr.endpos[2] );
+	G_SetOrigin( ent, tr.endpos );
+	VectorCopy( tr.endpos, ent->client->ps.origin );
+	VectorClear( ent->client->ps.velocity );
+	gi.linkentity( ent );
+}
+
 static void G_CoopStandInFrame( void ) {
 	gentity_t *ent = G_CoopStandIn();
 	if ( !ent ) {
@@ -299,7 +327,13 @@ static void G_CoopStandInFrame( void ) {
 			G_ClearEnemy( ent );
 		}
 		const gentity_t *p2 = G_PlayerNum( 1 );
-		if ( p2 && !( ent->taskManager && ent->taskManager->IsRunning() ) ) {
+		qboolean busy = (qboolean)( ent->taskManager && ent->taskManager->IsRunning() );
+		for ( int t = 0; t < NUM_TIDS && !busy; t++ ) {
+			busy = Q3_TaskIDPending( ent, (taskID_t)t );	// a script waits for it (IsRunning is false meanwhile)
+		}
+		if ( ent->NPC->goalEntity && Q3_TaskIDPending( ent, TID_MOVE_NAV ) ) {
+			G_CoopStandInToGoal( ent, ent->NPC->goalEntity->currentOrigin );
+		} else if ( p2 && !busy ) {
 			// player 2 is this character: it stands where player 2 is, so a script that takes it
 			// (kejim_post: Jan shoots the big door) starts there, not where Kyle left it
 			G_SetOrigin( ent, p2->currentOrigin );

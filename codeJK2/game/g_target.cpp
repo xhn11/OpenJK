@@ -26,6 +26,7 @@ along with this program; if not, see <http://www.gnu.org/licenses/>.
 #include "g_functions.h"
 #include "g_icarus.h"
 #include "g_coop.h"
+#include "Q3_Interface.h"
 //#include "Q3_Interface.h"
 extern void Q3_DebugPrint( int level, const char *format, ... );
 extern void G_SetEnemy( gentity_t *self, gentity_t *enemy );
@@ -802,9 +803,75 @@ void scriptrunner_run (gentity_t *self)
 	}
 }
 
+// coop: two players can start the same script again before it ends (kejim_post: the partner presses
+// another floor while the lift moves). The new run flushes the old one's commands on the entities it
+// affects, so the old one never ends (the lift buttons it hid stay hidden). A script runs once at a time:
+// it still runs while an entity that had nothing to do when it started (no NPC) has a task a script waits for.
+#define COOP_SCRIPT_RUNS		8
+#define COOP_SCRIPT_RUN_MS		30000
+static struct {
+	char	script[MAX_QPATH];
+	int		time;
+	byte	idle[MAX_GENTITIES / 8];
+} coopScriptRuns[COOP_SCRIPT_RUNS];
+
+static qboolean G_CoopScriptBusy( int ent ) {
+	gentity_t *e = &g_entities[ent];
+	if ( !e->inuse || e->client || !e->taskManager ) {
+		return qfalse;
+	}
+	for ( int t = 0; t < NUM_TIDS; t++ ) {
+		if ( Q3_TaskIDPending( e, (taskID_t)t ) ) {
+			return qtrue;	// a script waits for it (a move: TID_MOVE_NAV)
+		}
+	}
+	return qfalse;
+}
+
+static qboolean G_CoopScriptStillRuns( const gentity_t *self ) {
+	const char *script = self->behaviorSet[BSET_USE];
+	if ( g_coopMode == COOP_MODE_SOLO || !script || !script[0] ) {
+		return qfalse;
+	}
+	int slot = -1, oldest = 0;
+	for ( int i = 0; i < COOP_SCRIPT_RUNS; i++ ) {
+		if ( !Q_stricmp( coopScriptRuns[i].script, script ) ) {
+			slot = i;
+			break;
+		}
+		if ( coopScriptRuns[i].time < coopScriptRuns[oldest].time ) {
+			oldest = i;
+		}
+	}
+	if ( slot >= 0 && level.time >= coopScriptRuns[slot].time && level.time - coopScriptRuns[slot].time < COOP_SCRIPT_RUN_MS ) {
+		for ( int i = MAX_CLIENTS; i < globals.num_entities; i++ ) {
+			if ( ( coopScriptRuns[slot].idle[i >> 3] & ( 1 << ( i & 7 ) ) ) && G_CoopScriptBusy( i ) ) {
+				gi.Printf( "COOP: %s not run, its last run still works on %d (%s)\n", script, i, g_entities[i].classname );
+				return qtrue;
+			}
+		}
+	}
+	if ( slot < 0 ) {
+		slot = oldest;
+	}
+	Q_strncpyz( coopScriptRuns[slot].script, script, sizeof( coopScriptRuns[slot].script ) );
+	coopScriptRuns[slot].time = level.time;
+	memset( coopScriptRuns[slot].idle, 0, sizeof( coopScriptRuns[slot].idle ) );
+	for ( int i = MAX_CLIENTS; i < globals.num_entities; i++ ) {
+		if ( !G_CoopScriptBusy( i ) ) {
+			coopScriptRuns[slot].idle[i >> 3] |= 1 << ( i & 7 );
+		}
+	}
+	return qfalse;
+}
+
 void target_scriptrunner_use(gentity_t *self, gentity_t *other, gentity_t *activator)
 {
 	if ( self->nextthink > level.time )
+	{
+		return;
+	}
+	if ( G_CoopScriptStillRuns( self ) )
 	{
 		return;
 	}

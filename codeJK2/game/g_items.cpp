@@ -637,6 +637,10 @@ void Touch_Item (gentity_t *ent, gentity_t *other, trace_t *trace) {
 	{//coop: this player already has this weapon, it stays for the other one
 		return;
 	}
+	if ( G_CoopDropPaired( ent->s.number ) && !G_CoopOwnsEnt( other ) )
+	{//coop: the partner takes its own copy of a dropped weapon
+		return;
+	}
 	if ( g_coopMode != COOP_MODE_SOLO && !G_CoopOwnsEnt( other ) )
 	{//coop: the partner's puppet touched it, the partner takes it (design 19)
 		G_CoopSendPickup( ent );
@@ -650,6 +654,10 @@ void Touch_Item (gentity_t *ent, gentity_t *other, trace_t *trace) {
 		if ( !G_ItemPickupInto( ent, other ) )
 		{
 			return;
+		}
+		if ( other->s.number == 0 )
+		{//coop: the partner's copy of a dropped weapon goes
+			G_CoopDropTaken( ent );
 		}
 		if ( other->s.number == 0 && G_CoopSharedItem( ent->item ) )
 		{//coop: the partner gets keys too

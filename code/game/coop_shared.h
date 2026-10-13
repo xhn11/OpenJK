@@ -8,6 +8,7 @@
 
 typedef enum {
 	COOP_OWNER_NONE		= -1,	// free slot
+	COOP_OWNER_LOCAL	= 0,	// each machine runs its own copy, never in snapshots (dropped weapons)
 	COOP_OWNER_HOST		= 1,	// same values as coopRole_t
 	COOP_OWNER_GUEST	= 2
 } coopOwner_t;

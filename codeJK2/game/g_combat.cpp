@@ -216,6 +216,7 @@ gentity_t *TossClientItems( gentity_t *self )
 				gi.G2API_InitGhoul2Model( dropped->ghoul2, item->world_model, G_ModelIndex( item->world_model ), NULL_HANDLE, NULL_HANDLE, 0, 0);
 				dropped->s.radius = 10;
 			}
+			G_CoopWeaponDropped( dropped );	// coop: the guest drops its own copy
 		}
 	}
 //	else if (( self->client->NPC_class == CLASS_SENTRY ) || ( self->client->NPC_class == CLASS_PROBE )) // Looks dumb, Steve told us to take it out.

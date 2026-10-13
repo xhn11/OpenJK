@@ -17,7 +17,10 @@ int G_Coop_EntityOwner( int entNum ) {
 	if ( entNum < 0 || entNum >= MAX_GENTITIES || !g_entities[entNum].inuse ) {
 		return COOP_OWNER_NONE;
 	}
-	return g_coopMode == COOP_MODE_SOLO ? COOP_OWNER_HOST : G_CoopOwner( &g_entities[entNum] );
+	if ( g_coopMode == COOP_MODE_SOLO ) {
+		return COOP_OWNER_HOST;
+	}
+	return G_CoopDropPaired( entNum ) ? COOP_OWNER_LOCAL : G_CoopOwner( &g_entities[entNum] );
 }
 
 void G_Coop_GetEntityExtra( int entNum, coopEntExtra_t *out ) {

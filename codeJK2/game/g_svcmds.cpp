@@ -563,6 +563,7 @@ static svcmd_t svcmds[] = {
 	{ "coop_droppuppet",			G_CoopDropPuppet_f,							CMD_NONE },
 	{ "coop_npcmove",				G_CoopNpcMove_f,							CMD_NONE },
 	{ "coop_dropitem",			G_CoopDropItem_f,							CMD_NONE },
+	{ "coop_goto",					G_CoopGoto_f,								CMD_NONE },
 	{ "coop_npcs",					G_CoopNpcs_f,								CMD_NONE },
 	{ "coop_npcgive",				G_CoopNpcGive_f,							CMD_NONE },
 	{ "coop_skiplevel",				G_CoopSkipLevel_f,							CMD_NONE },

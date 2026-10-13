@@ -124,13 +124,77 @@ static int G_CoopTakerBit( const gentity_t *player ) {
 	return 1 << ( G_CoopOwnsEnt( player ) ? g_coopMode : G_CoopPartnerMode() );
 }
 
+static int	g_coopDropId[MAX_GENTITIES];	// dropped weapons: the pair's id (the host's entity number) + 1, 0 = none
+
 static qboolean G_CoopPerPlayerItem( const gentity_t *item, const gentity_t *taker ) {
 	return (qboolean)( g_coopMode != COOP_MODE_SOLO && item->item && item->item->giType == IT_WEAPON
-		&& taker->s.number < MAX_CLIENTS );	// an NPC picking a weapon up takes it away for both
+		&& taker->s.number < MAX_CLIENTS		// an NPC picking a weapon up takes it away for both
+		&& !g_coopDropId[item->s.number] );	// so does a player taking a dropped one
 }
 
 void G_CoopItemReset( int num ) {
 	g_coopItemTaken[num] = 0;
+	g_coopDropId[num] = 0;
+}
+
+// ---------------------------------------------------------------- dropped weapons
+// An NPC's weapon drops on both machines: deaths run on the host (design 6), which sends where its copy
+// fell; the guest drops its own there. Each machine runs its copy (no snapshots, COOP_OWNER_LOCAL), the
+// pair shares an id. Whoever takes it, the other machine's copy goes.
+
+qboolean G_CoopDropPaired( int num ) {
+	return (qboolean)( g_coopDropId[num] != 0 );
+}
+
+void G_CoopWeaponDropped( gentity_t *dropped ) {		// host: TossClientItems
+	if ( g_coopMode != COOP_MODE_HOST || !dropped || !dropped->item || !G_CoopPartnerInWorld() ) {
+		return;
+	}
+	const int n = dropped->s.number;
+	g_coopDropId[n] = n + 1;
+	G_CoopSend( "drop %d %d %d %.1f %.1f %.1f %.1f %.1f %.1f", n, (int)( dropped->item - bg_itemlist ), dropped->count,
+		dropped->s.pos.trBase[0], dropped->s.pos.trBase[1], dropped->s.pos.trBase[2],
+		dropped->s.pos.trDelta[0], dropped->s.pos.trDelta[1], dropped->s.pos.trDelta[2] );
+}
+
+static void G_CoopCmd_Drop( void ) {		// guest
+	extern gentity_t *LaunchItem( gitem_t *item, vec3_t origin, vec3_t velocity, char *target );
+	const int id = atoi( gi.argv( 2 ) ), index = atoi( gi.argv( 3 ) );
+	if ( id < 0 || id >= MAX_GENTITIES || index <= 0 || index >= bg_numItems ) {
+		return;
+	}
+	gitem_t *item = &bg_itemlist[index];
+	vec3_t origin = { (float)atof( gi.argv( 5 ) ), (float)atof( gi.argv( 6 ) ), (float)atof( gi.argv( 7 ) ) };
+	vec3_t velocity = { (float)atof( gi.argv( 8 ) ), (float)atof( gi.argv( 9 ) ), (float)atof( gi.argv( 10 ) ) };
+	gentity_t *dropped = LaunchItem( item, origin, velocity, NULL );
+	dropped->e_ThinkFunc = thinkF_NULL;	// as TossClientItems: NPC weapons stay
+	dropped->nextthink = -1;
+	dropped->count = atoi( gi.argv( 4 ) );
+	if ( item->giType == IT_WEAPON && item->giTag != WP_THERMAL && item->giTag != WP_TRIP_MINE && item->giTag != WP_DET_PACK ) {
+		gi.G2API_InitGhoul2Model( dropped->ghoul2, item->world_model, G_ModelIndex( item->world_model ), NULL_HANDLE, NULL_HANDLE, 0, 0 );
+		dropped->s.radius = 10;
+	}
+	g_coopDropId[dropped->s.number] = id + 1;
+	g_coopLastDropped = dropped->s.number;
+	gi.Printf( "COOP: %s dropped here as %d (pair %d)\n", item->classname, dropped->s.number, id );
+}
+
+void G_CoopDropTaken( const gentity_t *item ) {		// Touch_Item: our player took our copy
+	if ( g_coopDropId[item->s.number] ) {
+		G_CoopSend( "dropgone %d", g_coopDropId[item->s.number] - 1 );
+	}
+}
+
+static void G_CoopCmd_DropGone( void ) {
+	const int id = atoi( gi.argv( 2 ) );
+	for ( int i = MAX_CLIENTS; i < globals.num_entities; i++ ) {
+		gentity_t *ent = &g_entities[i];
+		if ( ent->inuse && g_coopDropId[i] == id + 1 ) {
+			gi.Printf( "COOP: %s (pair %d) taken by the partner\n", ent->classname, id );
+			G_FreeEntity( ent );
+			return;
+		}
+	}
 }
 
 // replication: the item's owner knows who took it (G_Coop_GetEntityExtra / G_Coop_ApplyEntity)
@@ -213,6 +277,21 @@ void G_CoopDropItem_f( void ) {
 	ent->e_ThinkFunc = thinkF_NULL;		// stays until taken
 	g_coopLastDropped = ent->s.number;
 	gi.Printf( "COOP: dropped %s as entity %d\n", item->classname, ent->s.number );
+}
+
+// console: coop_goto <entity, -1: the last dropped item> - our player jumps there (testing)
+void G_CoopGoto_f( void ) {
+	const int num = atoi( gi.argv( 1 ) ) < 0 ? g_coopLastDropped : atoi( gi.argv( 1 ) );
+	gentity_t *player = &g_entities[0];
+	if ( gi.argc() != 2 || num < 0 || num >= MAX_GENTITIES || !g_entities[num].inuse || !player->client ) {
+		gi.Printf( "usage: coop_goto <entity, -1: the last dropped item>\n" );
+		return;
+	}
+	vec3_t origin;
+	VectorCopy( g_entities[num].currentOrigin, origin );
+	origin[2] += 24;
+	gi.Printf( "COOP: going to %d (%s)\n", num, g_entities[num].classname );
+	TeleportPlayer( player, origin, player->client->ps.viewangles );
 }
 
 // ---------------------------------------------------------------- force push / pull (design 7)
@@ -367,6 +446,8 @@ static const coopGameCmd_t coopGameCmds[] = {
 	{ "hit",	G_CoopCmd_Hit },
 	{ "use",	G_CoopCmd_Use },
 	{ "pickup",	G_CoopCmd_Pickup },
+	{ "drop",	G_CoopCmd_Drop },
+	{ "dropgone",	G_CoopCmd_DropGone },
 	{ "fthrow",	G_CoopCmd_Throw },
 	{ "claimed",	G_CoopCmd_Claimed },
 	{ "mtrick",	G_CoopCmd_MindTrick },
@@ -420,7 +501,7 @@ void G_CoopHurt_f( void ) {
 	const int damage = atoi( gi.argv( 2 ) ) > 0 ? atoi( gi.argv( 2 ) ) : targ->health / 2 + 1;
 	const int hitLoc = gi.argc() == 4 ? atoi( gi.argv( 3 ) ) : HL_NONE;
 	gi.Printf( "COOP: hurting %d (health %d) for %d at hitloc %d\n", targ->s.number, targ->health, damage, hitLoc );
-	G_Damage( targ, &g_entities[0], &g_entities[0], NULL, NULL, damage, DAMAGE_NO_KNOCKBACK, hitLoc == HL_NONE ? MOD_UNKNOWN : MOD_BLASTER, hitLoc );
+	G_Damage( targ, &g_entities[0], &g_entities[0], NULL, NULL, damage, DAMAGE_NO_KNOCKBACK | DAMAGE_HEAVY_WEAP_CLASS, hitLoc == HL_NONE ? MOD_UNKNOWN : MOD_BLASTER, hitLoc );
 }
 
 // console: coop_use <entity> - our player uses an entity (a host one from the guest goes to the host)

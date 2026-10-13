@@ -45,7 +45,24 @@ try {
     Start-Sleep -Seconds 3
     $procs.guest = Start-Instance "guest" 1 (@("+set coop_name GuestBot") + $GuestArgs)
   }
-  Start-Sleep -Seconds $Seconds
+  # -Seconds is the limit: once every expected line is in both logs the test is done (rejects are checked
+  # on what was logged until then)
+  $deadline = (Get-Date).AddSeconds($Seconds)
+  $expects = @{ host = $ExpectHost; guest = $ExpectGuest }
+  $canEnd = ($ExpectHost.Count + $ExpectGuest.Count) -gt 0
+  while ((Get-Date) -lt $deadline) {
+    Start-Sleep -Seconds 1
+    if (-not $canEnd) { continue }
+    $done = $true
+    foreach ($k in $procs.Keys) {
+      if (-not $expects[$k].Count) { continue }
+      $log = Join-Path $work "$k\base\qconsole.log"
+      $text = if (Test-Path $log) { Get-Content $log -Raw -ErrorAction SilentlyContinue } else { "" }
+      foreach ($p in $expects[$k]) { if ("$text" -notmatch $p) { $done = $false; break } }
+      if (-not $done) { break }
+    }
+    if ($done) { Start-Sleep -Seconds 1; break }
+  }
   foreach ($k in $procs.Keys) {
     if ($procs[$k].HasExited) { Write-Host "[FAIL] $k exited early (code $($procs[$k].ExitCode))"; $failed = $true }
   }
