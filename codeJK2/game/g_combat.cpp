@@ -3487,6 +3487,11 @@ extern void RunEmplacedWeapon( gentity_t *ent, usercmd_t **ucmd );
 	{//coop: the logs tell who died and how
 		gi.Printf( "COOP: our player was killed by %s (mod %d)\n", attacker && attacker->classname ? attacker->classname : "nothing", meansOfDeath );
 	}
+	else if ( g_coopMode == COOP_MODE_HOST && self->NPC )
+	{//coop: every NPC death, and what it triggers (mission counters)
+		gi.Printf( "COOP: npc %d (%s) died, killed by %d, target %s\n", self->s.number, self->NPC_type ? self->NPC_type : "?",
+			attacker ? attacker->s.number : -1, self->target ? self->target : "-" );
+	}
 	if ( attacker && attacker->s.number == 1 && G_IsPlayer( attacker ) && self->client
 		&& ( self->client->playerTeam == TEAM_ENEMY || ( self->NPC && self->NPC->charmedTime > level.time ) ) )
 	{//coop: the partner killed it, its statistics count it (design 24)

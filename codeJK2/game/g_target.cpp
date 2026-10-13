@@ -25,6 +25,7 @@ along with this program; if not, see <http://www.gnu.org/licenses/>.
 #include "g_local.h"
 #include "g_functions.h"
 #include "g_icarus.h"
+#include "g_coop.h"
 //#include "Q3_Interface.h"
 extern void Q3_DebugPrint( int level, const char *format, ... );
 extern void G_SetEnemy( gentity_t *self, gentity_t *enemy );
@@ -591,6 +592,11 @@ void target_counter_use( gentity_t *self, gentity_t *other, gentity_t *activator
 	if ( activator )
 	{
 		Q3_DebugPrint( WL_VERBOSE, "target_counter %s used by %s (%d/%d)\n", self->targetname, activator->targetname, (self->max_health-self->count), self->max_health );
+	}
+	if ( g_coopMode != COOP_MODE_SOLO )
+	{//coop: "the door does not open" reports - how far the mission's counters are
+		gi.Printf( "COOP: counter %s (%d) used by %d, %d more to go\n", self->targetname ? self->targetname : "-", self->s.number,
+			activator ? activator->s.number : -1, self->count );
 	}
 
 	if ( self->count )
