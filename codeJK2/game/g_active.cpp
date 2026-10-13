@@ -802,6 +802,19 @@ void ClientImpacts( gentity_t *ent, pmove_t *pm ) {
 			GEntity_TouchFunc( ent, other, &trace );
 		}
 
+		if ( !ent->s.number && g_coopMode != COOP_MODE_SOLO && other->classname && !Q_stricmp( other->classname, "func_door" ) )
+		{//coop: "the door does not open" reports - which door holds our player back
+			static int lastLog[MAX_GENTITIES];
+			const int door = other->s.number;
+			if ( !lastLog[door] || level.time - lastLog[door] > 10000 || level.time < lastLog[door] )
+			{
+				lastLog[door] = level.time;
+				gi.Printf( "COOP: our player against door %d (state %d, spawnflags 0x%x, targetname %s) at %.0f %.0f %.0f\n",
+					door, other->moverState, other->spawnflags, other->targetname ? other->targetname : "-",
+					ent->currentOrigin[0], ent->currentOrigin[1], ent->currentOrigin[2] );
+			}
+		}
+
 		if ( other->e_TouchFunc == touchF_NULL ) {	// not needed, but I'll leave it I guess (cache-hit issues)
 			continue;
 		}
