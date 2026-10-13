@@ -298,6 +298,11 @@ void G_Coop_ApplyEntity( int entNum, const entityState_t *es, const playerState_
 	ent->spawnflags = ex->spawnflags;
 	G_CoopItemSetTakenBits( entNum, ex->itemTaken );
 	ent->health = ex->health;
+	if ( ent->client && entNum >= MAX_CLIENTS ) {
+		// shots and blows hit a living partner NPC here (G_MissileImpacted & co. test takedamage); the hit goes
+		// to its owner, whose G_Damage decides (invincible, undying...)
+		ent->takedamage = (qboolean)( ent->health > 0 );
+	}
 	ent->max_health = ex->maxHealth;
 	ent->flags = ex->flags;
 	ent->svFlags = ex->svFlags;

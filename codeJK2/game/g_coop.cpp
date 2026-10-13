@@ -156,9 +156,9 @@ void G_CoopEntInfo_f( void ) {
 	coopEntExtra_t ex;
 	G_Coop_GetEntityExtra( num, &ex );
 	const gentity_t *ent = &g_entities[num];
-	gi.Printf( "COOP: entinfo %d owner %d class %s npc \"%s\" linked %d portal %d health %d origin %.0f %.0f %.0f hidden %d\n",
+	gi.Printf( "COOP: entinfo %d owner %d class %s npc \"%s\" linked %d portal %d health %d origin %.0f %.0f %.0f hidden %d takedamage %d\n",
 		num, G_Coop_EntityOwner( num ), ex.inuse ? ex.classname : "(free)", ex.npcType, ex.linked, ex.areaPortalOpen, ex.health,
-		ent->currentOrigin[0], ent->currentOrigin[1], ent->currentOrigin[2], G_CoopItemHidden( num ) );
+		ent->currentOrigin[0], ent->currentOrigin[1], ent->currentOrigin[2], G_CoopItemHidden( num ), ent->takedamage ? 1 : 0 );
 }
 
 #define COOP_MAX_PORTAL_STEPS	8
