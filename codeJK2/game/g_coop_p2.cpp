@@ -47,7 +47,8 @@ void G_CoopP2Init( void ) {
 
 static qboolean G_CoopSpotFree( gentity_t *ent, const vec3_t from, const vec3_t spot ) {
 	trace_t tr;
-	gi.trace( &tr, from, ent->mins, ent->maxs, spot, ent->s.number, MASK_PLAYERSOLID, G2_NOCOLLIDE, 0 );
+	// from is inside the partner (entity 1): its body must not block the way out; ours is unlinked
+	gi.trace( &tr, from, ent->mins, ent->maxs, spot, 1, MASK_PLAYERSOLID, G2_NOCOLLIDE, 0 );
 	if ( tr.startsolid || tr.allsolid || tr.fraction < 1.0f ) {
 		return qfalse;
 	}
@@ -64,17 +65,24 @@ qboolean G_CoopFindSpotNear( gentity_t *ent, const vec3_t org, vec3_t out ) {
 	vec3_t from;
 	VectorCopy( org, from );
 	from[2] += 8;
-	for ( size_t d = 0; d < ARRAY_LEN( dists ); d++ ) {
+	const qboolean linked = ent->linked;
+	gi.unlinkentity( ent );
+	qboolean found = qfalse;
+	for ( size_t d = 0; d < ARRAY_LEN( dists ) && !found; d++ ) {
 		for ( int a = 0; a < 8; a++ ) {
 			const float yaw = DEG2RAD( a * 45.0f );
 			vec3_t spot = { from[0] + cosf( yaw ) * dists[d], from[1] + sinf( yaw ) * dists[d], from[2] };
 			if ( G_CoopSpotFree( ent, from, spot ) ) {
 				VectorCopy( spot, out );
-				return qtrue;
+				found = qtrue;
+				break;
 			}
 		}
 	}
-	return qfalse;
+	if ( linked ) {
+		gi.linkentity( ent );
+	}
+	return found;
 }
 
 // TeleportPlayer without G_KillBox: never telefrag the partner standing at org

@@ -41,6 +41,12 @@ void G_CoopLifeInit( void ) {
 
 // ---------------------------------------------------------------- respawn next to the partner (design 10)
 
+// the partner lives, so our death only waits for a respawn: no SP mission failed screen, scripts go on
+qboolean G_CoopPartnerAlive( void ) {
+	const gentity_t *partner = G_PlayerNum( 1 );
+	return (qboolean)( G_CoopPartnerInWorld() && partner && partner->health > 0 );
+}
+
 static void G_CoopRevive( gentity_t *ent, const vec3_t near ) {
 	gclient_t *cl = ent->client;
 	if ( cl->dismembered || ( ent->flags & FL_DISINTEGRATED ) ) {
@@ -73,12 +79,14 @@ qboolean G_CoopRespawnThink( gentity_t *ent ) {
 		g_coopDeathTime = 0;
 		return qfalse;
 	}
+	gentity_t *partner = G_PlayerNum( 1 );
+	const qboolean partnerAlive = (qboolean)( partner && partner->health > 0 );
 	if ( !g_coopDeathTime ) {
 		g_coopDeathTime = level.time;
 		g_coopLastCountdown = -1;
+		gi.Printf( "COOP: our player died, the partner %s (health %d)\n", partnerAlive ? "lives" : "is dead or missing",
+			partner ? partner->health : -1 );
 	}
-	gentity_t *partner = G_PlayerNum( 1 );
-	const qboolean partnerAlive = (qboolean)( partner && partner->health > 0 );
 	if ( !partnerAlive ) {
 		// both dead (design 10): the host reloads the autosave, the guest follows the host's map
 		if ( !g_coopBothDeadTime ) {

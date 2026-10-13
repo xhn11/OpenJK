@@ -2104,8 +2104,8 @@ extern cvar_t	*g_skippingcin;
 				gi.cvar_set("timescale", "1");
 				gi.cvar_set("skippingCinematic", "0");
 			}
-			if ( ent->client->ps.pm_type == PM_DEAD && cg.missionStatusDeadTime < level.time )
-			{//mission status screen is up because player is dead, stop all scripts
+			if ( ent->client->ps.pm_type == PM_DEAD && cg.missionStatusDeadTime < level.time && !G_CoopPartnerAlive() )
+			{//mission status screen is up because player is dead, stop all scripts (coop: not while the partner plays on)
 				stop_icarus = qtrue;
 			}
 		}

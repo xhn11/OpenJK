@@ -352,7 +352,9 @@ qboolean CG_DrawScoreboard( void )
 	}
 
 	// Character is either dead, or a script has brought up the screen
-	if (((cg.predicted_player_state.pm_type == PM_DEAD) && (cg.missionStatusDeadTime < level.time))
+	// (coop: not while the partner lives - the respawn countdown is a center print)
+extern qboolean G_CoopPartnerAlive( void );
+	if (((cg.predicted_player_state.pm_type == PM_DEAD) && (cg.missionStatusDeadTime < level.time) && !G_CoopPartnerAlive())
 		|| (cg.missionStatusShow))
 	{
 		CG_MissionFailed();

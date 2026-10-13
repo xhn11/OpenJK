@@ -1222,6 +1222,17 @@ void Touch_DoorTrigger( gentity_t *ent, gentity_t *other, trace_t *trace )
 
 	if ( ent->owner->spawnflags & MOVER_LOCKED )
 	{//don't even try to use the door if it's locked
+		if ( g_coopMode != COOP_MODE_SOLO && G_IsPlayer( other ) )
+		{//coop: "the door does not open" reports - which one, and who stands there
+			static int lastLog[MAX_GENTITIES];
+			const int door = ent->owner->s.number;
+			if ( !lastLog[door] || level.time - lastLog[door] > 10000 || level.time < lastLog[door] )
+			{
+				lastLog[door] = level.time;
+				gi.Printf( "COOP: %s at locked door %d (%s)\n", other->s.number ? "the partner" : "our player", door,
+					ent->owner->targetname ? ent->owner->targetname : "no targetname: a script or nothing opens it" );
+			}
+		}
 		return;
 	}
 

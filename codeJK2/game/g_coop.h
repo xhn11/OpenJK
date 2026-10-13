@@ -110,6 +110,7 @@ void		G_CoopLifeInit( void );
 void		G_CoopLifeFrame( void );								// G_RunFrame
 void		G_CoopLifeCommand( const char *name );
 qboolean	G_CoopRespawnThink( gentity_t *ent );					// ClientThink, dead: qtrue = coop handles it
+qboolean	G_CoopPartnerAlive( void );							// our death waits for a respawn, not a reload
 void		G_CoopSkipLevel_f( void );								// console: coop_skiplevel
 qboolean	G_CoopSaveEnt( const gentity_t *ent );					// WriteGEntities: ours, and the guest's NPCs
 qboolean	G_CoopNoFriendlyFire( const gentity_t *targ, const gentity_t *attacker );	// G_Damage: players never hurt each other
