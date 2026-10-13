@@ -298,6 +298,15 @@ static void G_CoopStandInFrame( void ) {
 		if ( ent->enemy ) {
 			G_ClearEnemy( ent );
 		}
+		const gentity_t *p2 = G_PlayerNum( 1 );
+		if ( p2 && !( ent->taskManager && ent->taskManager->IsRunning() ) ) {
+			// player 2 is this character: it stands where player 2 is, so a script that takes it
+			// (kejim_post: Jan shoots the big door) starts there, not where Kyle left it
+			G_SetOrigin( ent, p2->currentOrigin );
+			VectorCopy( p2->currentOrigin, ent->client->ps.origin );
+			VectorClear( ent->client->ps.velocity );
+			gi.linkentity( ent );
+		}
 	} else if ( g_coopStandInHidden ) {
 		g_coopStandInHidden = qfalse;
 		ent->s.eFlags &= ~EF_NODRAW;
