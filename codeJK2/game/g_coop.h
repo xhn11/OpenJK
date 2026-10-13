@@ -117,3 +117,4 @@ qboolean	G_CoopForwardMindTrick( gentity_t *self, gentity_t *target );	// ForceT
 void		G_CoopTriggerFrame( void );								// G_RunFrame (host): physical triggers on/off to the guest
 void		G_CoopCenterPrint( const char *text );					// local only: coop messages (Czech, no diacritics: the fonts lack them)
 void		G_CoopNpcInfo_f( void );								// console: coop_npcinfo
+void		G_CoopDropPuppet_f( void );								// console: coop_droppuppet (testing)

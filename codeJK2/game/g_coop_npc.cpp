@@ -492,3 +492,11 @@ void G_CoopNpcInfo_f( void ) {
 			ent->currentOrigin[0], ent->currentOrigin[1], ent->currentOrigin[2] );
 	}
 }
+
+// console: coop_droppuppet - free the partner's puppet here (testing the snapshot self-repair)
+void G_CoopDropPuppet_f( void ) {
+	if ( g_entities[1].inuse && !G_CoopOwnsEnt( &g_entities[1] ) ) {
+		G_FreeEntity( &g_entities[1] );
+		gi.Printf( "COOP: puppet dropped (test)\n" );
+	}
+}

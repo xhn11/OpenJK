@@ -34,6 +34,10 @@ static qboolean			txRingReady, rxRingReady;
 static int				txFrameNum;			// never reset, so frame numbers stay unique across maps
 static int				txAckedFrame = -1;
 static int				txLastBuiltTime = -1;
+static int				txLastWritten, txLastBudget;	// logging (CoopSnapshot_CheckStall)
+static qboolean			txStallLogged;
+static int				rxLastApplied, rxLastReceived, rxLastResult, rxNobaseCount;
+static qboolean			rxStallLogged;
 
 // receiving
 static byte				rxPending[COOP_MAX_MSGLEN];
@@ -96,6 +100,9 @@ static void CoopSnapshot_FreeGuestEntities( void ) {
 	int freed = 0;
 	for ( int n = 1; n < ge->num_entities; n++ ) {
 		if ( ge->Coop_EntityOwner( n ) == COOP_OWNER_GUEST ) {
+			if ( n == 1 ) {
+				Com_Printf( "COOP: the guest's puppet goes with the guest (link %d, ready gen %d)\n", coop.state, Coop_MapGen() );
+			}
 			ge->Coop_FreeEntity( n );
 			freed++;
 		}
@@ -239,6 +246,7 @@ static void CoopSnapshot_WriteFrame( msg_t *msg ) {
 	if ( coop_snapshotBytes->integer > 0 && budget > coop_snapshotBytes->integer ) {
 		budget = coop_snapshotBytes->integer;
 	}
+	txLastBudget = budget;
 	if ( budget < COOP_SNAP_HEADER + 64 ) {
 		return;
 	}
@@ -256,6 +264,11 @@ static void CoopSnapshot_WriteFrame( msg_t *msg ) {
 		return;
 	}
 	txLastBuiltTime = sv.time;
+	txLastWritten = Sys_Milliseconds();
+	if ( txStallLogged ) {
+		txStallLogged = qfalse;
+		Com_Printf( "COOP: snapshots sent again (frame %d)\n", frameNum );
+	}
 	const gentity_t *player = SV_GentityNum( 0 );
 	MSG_WriteByte( msg, coop_snapshot );
 	MSG_WriteLong( msg, Coop_MapGen() );
@@ -333,6 +346,7 @@ qboolean CoopSnapshot_Parse( msg_t *msg ) {
 	}
 	memcpy( rxPending, blob, len );	// Coop_Frame applies it; only the newest one matters
 	rxPendingLen = len;
+	rxLastReceived = Sys_Milliseconds();
 	VectorCopy( view, peerView );
 	peerViewValid = qtrue;
 	return qtrue;
@@ -403,7 +417,28 @@ static void CoopSnapshot_Sweep( int frameNum ) {
 	}
 }
 
+// logging: frames from the partner stopped being applied (the M4+ manual sessions lost the guest's player)
+
+
+static void CoopSnapshot_CheckStall( void ) {
+	const int now = Sys_Milliseconds();
+	if ( !CoopSnapshot_InWorld() || !rxSynced ) {
+		return;
+	}
+	if ( now - rxLastApplied > 2000 && !rxStallLogged ) {
+		rxStallLogged = qtrue;
+		Com_Printf( "COOP: no partner snapshot applied for %d ms (last received %d ms ago, pending %d, last result %d, nobase %d, ack %d)\n",
+			now - rxLastApplied, now - rxLastReceived, rxPendingLen, rxLastResult, rxNobaseCount, rxAckFrame );
+	}
+	if ( txLastBuiltTime >= 0 && now - txLastWritten > 2000 && !txStallLogged ) {	// after our first frame
+		txStallLogged = qtrue;
+		Com_Printf( "COOP: no snapshot sent for %d ms (sv.time %d, last built %d, budget %d, acked %d)\n",
+			now - txLastWritten, sv.time, txLastBuiltTime, txLastBudget, txAckedFrame );
+	}
+}
+
 void CoopSnapshot_Frame( void ) {
+	CoopSnapshot_CheckStall();
 	if ( !rxPendingLen ) {
 		return;
 	}
@@ -416,7 +451,9 @@ void CoopSnapshot_Frame( void ) {
 	int frameNum = -1;
 	const int result = CoopSnap_Read( &rxRing, rxPending, rxPendingLen, &frameNum );
 	rxPendingLen = 0;
+	rxLastResult = result;
 	if ( result == COOP_SNAP_NOBASE ) {
+		rxNobaseCount++;
 		rxAckFrame = -1;
 		return;
 	}
@@ -437,6 +474,21 @@ void CoopSnapshot_Frame( void ) {
 	}
 	rxAppliedFrame = frameNum;
 	rxAckFrame = frameNum;
+	rxLastApplied = Sys_Milliseconds();
+	if ( rxStallLogged ) {
+		rxStallLogged = qfalse;
+		Com_Printf( "COOP: partner snapshots applied again (frame %d)\n", frameNum );
+	}
+	if ( rxSynced && !SV_GentityNum( 1 )->inuse ) {
+		// the partner is in our map but its player is not here: ask for a full frame, it brings the player back
+		static int lastAsk;
+		if ( Sys_Milliseconds() - lastAsk > 1000 ) {
+			lastAsk = Sys_Milliseconds();
+			Com_Printf( "COOP: the partner's player is missing, asking for a full snapshot\n" );
+			rxAckFrame = -1;
+			rxAppliedFrame = -1;
+		}
+	}
 	if ( f && coop.role == COOP_ROLE_GUEST ) {
 		guestServerTime = f->serverTime;
 		guestServerTimeAt = Sys_Milliseconds();
