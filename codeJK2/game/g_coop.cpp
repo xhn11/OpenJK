@@ -116,10 +116,17 @@ void G_CoopHookImports( void ) {
 
 void G_CoopEnts_f( void ) {
 	int total = 0, ours = 0, clients = 0;
+	const char *filter = gi.argc() > 1 ? gi.argv( 1 ) : NULL;	// coop_ents <classname>: list those (testing)
 	for ( int i = 0; i < globals.num_entities; i++ ) {
 		const gentity_t *ent = &g_entities[i];
 		if ( !ent->inuse ) {
 			continue;
+		}
+		if ( filter && ent->classname && !Q_stricmp( ent->classname, filter ) ) {
+			const gentity_t *mover = ent->owner ? ent->owner : ent;
+			gi.Printf( "COOP: ent %d %s owner %d linked %d contents 0x%x mover %d state %d spawnflags 0x%x from %.0f %.0f %.0f to %.0f %.0f %.0f\n",
+				i, ent->classname, G_CoopOwner( ent ), ent->linked, ent->contents, mover->s.number, mover->moverState, mover->spawnflags,
+				ent->absmin[0], ent->absmin[1], ent->absmin[2], ent->absmax[0], ent->absmax[1], ent->absmax[2] );
 		}
 		total++;
 		if ( G_CoopOwnsEnt( ent ) ) {

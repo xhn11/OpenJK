@@ -4,6 +4,8 @@
 #include "g_functions.h"
 #include "g_coop.h"
 
+#define COOP_USE_HOLD_MS	300		// a tap of use is reported this long (G_Coop_GetEntityExtra)
+
 extern gNPC_t	*New_NPC_t( void );
 extern void		G_CreateG2AttachedWeaponModel( gentity_t *ent, const char *weaponModel );
 extern int		WP_SetSaberModel( gclient_t *client, class_t npcClass );
@@ -53,6 +55,16 @@ void G_Coop_GetEntityExtra( int entNum, coopEntExtra_t *out ) {
 	out->areaPortalOpen = G_CoopPortalCount( entNum );
 	out->triggerEnabled = ( ent->svFlags & SVF_INACTIVE ) ? 0 : 1;
 	out->buttons = ent->client ? ent->client->usercmd.buttons : 0;
+	if ( entNum == 0 ) {
+		// a tap of use lasts one frame here, and the partner applies only its newest snapshot: the press
+		// would often never reach the partner's triggers (switches with USE_BUTTON). Report it a while longer.
+		static int lastUse;
+		if ( out->buttons & BUTTON_USE ) {
+			lastUse = level.time;
+		} else if ( lastUse && level.time - lastUse < COOP_USE_HOLD_MS && level.time >= lastUse ) {
+			out->buttons |= BUTTON_USE;
+		}
+	}
 	out->itemTaken = G_CoopItemTakenBits( entNum );
 	if ( ent->client && ent->client->ps.saberInFlight && ent->client->ps.saberEntityNum > 0
 		&& ent->client->ps.saberEntityNum < ENTITYNUM_WORLD && g_entities[ent->client->ps.saberEntityNum].inuse ) {
