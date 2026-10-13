@@ -30,6 +30,7 @@ typedef struct {
 	int		enemy, lastEnemy;
 	int		painDebounceTime, attackDebounceTime;
 	int		takedamage;
+	int		clipmask, mass;			// physics: a replica has neither until it runs here
 } coopNpcEnt_t;
 
 typedef struct {
@@ -40,6 +41,7 @@ typedef struct {
 	int		fireDelay;
 	float	pushVec[3];
 	int		pushVecTime, poisonDamage, poisonTime;
+	int		standheight, crouchheight;
 } coopNpcClient_t;
 
 typedef struct {
@@ -97,6 +99,8 @@ static void G_CoopNpcPack( gentity_t *ent, coopNpcState_t *st ) {
 	st->ent.painDebounceTime = ent->painDebounceTime;
 	st->ent.attackDebounceTime = ent->attackDebounceTime;
 	st->ent.takedamage = ent->takedamage;
+	st->ent.clipmask = ent->clipmask;
+	st->ent.mass = ent->mass;
 	gclient_t *cl = ent->client;
 	st->cl.playerTeam = cl->playerTeam;
 	st->cl.enemyTeam = cl->enemyTeam;
@@ -114,6 +118,8 @@ static void G_CoopNpcPack( gentity_t *ent, coopNpcState_t *st ) {
 	st->cl.pushVecTime = cl->pushVecTime;
 	st->cl.poisonDamage = cl->poisonDamage;
 	st->cl.poisonTime = cl->poisonTime;
+	st->cl.standheight = cl->standheight;
+	st->cl.crouchheight = cl->crouchheight;
 	memcpy( &st->npc, ent->NPC, sizeof( gNPC_t ) );
 	gNPC_t *n = &st->npc;
 	gentity_t **ptrs[] = { &n->touchedByPlayer, &n->aimingBeam, &n->eventOwner, &n->coverTarg, &n->tempGoal, &n->goalEntity,
@@ -144,6 +150,8 @@ static void G_CoopNpcUnpack( gentity_t *ent, const coopNpcState_t *st ) {
 	ent->painDebounceTime = st->ent.painDebounceTime;
 	ent->attackDebounceTime = st->ent.attackDebounceTime;
 	ent->takedamage = (qboolean)st->ent.takedamage;
+	ent->clipmask = st->ent.clipmask ? st->ent.clipmask : MASK_NPCSOLID;
+	ent->mass = st->ent.mass;
 	gclient_t *cl = ent->client;
 	cl->playerTeam = (team_t)st->cl.playerTeam;
 	cl->enemyTeam = (team_t)st->cl.enemyTeam;
@@ -161,6 +169,8 @@ static void G_CoopNpcUnpack( gentity_t *ent, const coopNpcState_t *st ) {
 	cl->pushVecTime = st->cl.pushVecTime;
 	cl->poisonDamage = st->cl.poisonDamage;
 	cl->poisonTime = st->cl.poisonTime;
+	cl->standheight = st->cl.standheight ? st->cl.standheight : DEFAULT_MAXS_2;
+	cl->crouchheight = st->cl.crouchheight ? st->cl.crouchheight : CROUCH_MAXS_2;
 
 	gentity_t *ownGoal = ent->NPC->tempGoal;	// a per-NPC helper entity on each machine, never replicated
 	memcpy( ent->NPC, &st->npc, sizeof( gNPC_t ) );
@@ -452,5 +462,33 @@ void G_CoopNpcCommand( const char *name ) {
 		G_CoopCmd_NpcTaken();
 	} else if ( !Q_stricmp( name, "npcreq" ) ) {
 		G_CoopCmd_NpcRequest();
+	}
+}
+
+// console: coop_npcinfo - every live NPC's enemy and state, and how the partner looks to them (debugging)
+void G_CoopNpcInfo_f( void ) {
+	extern bool in_camera;
+	const gentity_t *p = &g_entities[1];
+	gi.Printf( "COOP: in_camera %d, player 0 health %d flags 0x%x origin %.0f %.0f %.0f\n", in_camera ? 1 : 0, g_entities[0].health,
+		g_entities[0].flags, g_entities[0].currentOrigin[0], g_entities[0].currentOrigin[1], g_entities[0].currentOrigin[2] );
+	if ( p->inuse && p->client ) {
+		gi.Printf( "COOP: light partner %.1f player0 %.1f\n", p->lightLevel, g_entities[0].lightLevel );
+		gi.Printf( "COOP: partner health %d team %d flags 0x%x svFlags 0x%x contents 0x%x linked %d takedamage %d eFlags 0x%x origin %.0f %.0f %.0f eye %.0f %.0f %.0f\n",
+			p->health, p->client->playerTeam, p->flags, p->svFlags, p->contents, p->linked, p->takedamage, p->s.eFlags,
+			p->currentOrigin[0], p->currentOrigin[1], p->currentOrigin[2],
+			p->client->renderInfo.eyePoint[0], p->client->renderInfo.eyePoint[1], p->client->renderInfo.eyePoint[2] );
+	} else {
+		gi.Printf( "COOP: no partner puppet\n" );
+	}
+	for ( int i = MAX_CLIENTS; i < globals.num_entities; i++ ) {
+		const gentity_t *ent = &g_entities[i];
+		if ( !ent->inuse || !ent->NPC || !ent->client || ent->health <= 0 ) {
+			continue;
+		}
+		gi.Printf( "COOP: npc %d %s owner %d team %d enemyTeam %d enemy %d bState %d scriptFlags 0x%x dist0 %.0f dist1 %.0f at %.0f %.0f %.0f\n",
+			i, ent->NPC_type, G_CoopOwner( ent ), ent->client->playerTeam, ent->client->enemyTeam,
+			ent->enemy ? ent->enemy->s.number : -1, ent->NPC->behaviorState, ent->NPC->scriptFlags,
+			Distance( ent->currentOrigin, g_entities[0].currentOrigin ), p->inuse ? Distance( ent->currentOrigin, p->currentOrigin ) : -1.0f,
+			ent->currentOrigin[0], ent->currentOrigin[1], ent->currentOrigin[2] );
 	}
 }

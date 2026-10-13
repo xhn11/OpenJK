@@ -559,6 +559,7 @@ static svcmd_t svcmds[] = {
 	{ "coop_entinfo",				G_CoopEntInfo_f,							CMD_NONE },
 	{ "coop_hurt",					G_CoopHurt_f,								CMD_NONE },
 	{ "coop_use",					G_CoopUse_f,								CMD_NONE },
+	{ "coop_npcinfo",				G_CoopNpcInfo_f,							CMD_NONE },
 	{ "coop_npcs",					G_CoopNpcs_f,								CMD_NONE },
 	{ "coop_npcgive",				G_CoopNpcGive_f,							CMD_NONE },
 	{ "coop_skiplevel",				G_CoopSkipLevel_f,							CMD_NONE },

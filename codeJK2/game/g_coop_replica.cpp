@@ -194,6 +194,10 @@ static gentity_t *G_CoopSpawnReplica( int num, const coopEntExtra_t *ex ) {
 		G_FreeEntity( ent );
 		return NULL;
 	}
+	ent->clipmask = MASK_NPCSOLID;	// as NPC_Begin: needed once this NPC runs here (design 6 migration)
+	ent->mass = 10;
+	ent->client->standheight = DEFAULT_MAXS_2;
+	ent->client->crouchheight = CROUCH_MAXS_2;
 	gi.Printf( "COOP: replica npc %d (%s)\n", num, ent->NPC_type );
 	return ent;
 }
