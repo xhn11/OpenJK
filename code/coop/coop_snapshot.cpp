@@ -42,6 +42,7 @@ static int				rxAppliedFrame = -1;
 static int				rxAckFrame = -1;
 static qboolean			rxSynced;			// a complete frame was applied in this map
 static qboolean			rxNeedSweep;		// a frame was applied without a known previous one
+static int				rxIncomingFrame;	// the frame being applied (logging)
 static int				applyClients;
 
 // guest time follows the host's frames
@@ -176,6 +177,12 @@ static int CoopSnapshot_Gather( void ) {
 	const int limit = ge->num_entities < COOP_SNAP_MAX_NUM ? ge->num_entities : COOP_SNAP_MAX_NUM;
 	const coopOwner_t self = CoopSnapshot_Self();
 	int count = 0, psCount = 0;
+	if ( !player->inuse || !player->client || ge->Coop_EntityOwner( 0 ) != self ) {
+		static int logged;
+		if ( logged++ < 5 ) {
+			Com_Printf( "COOP: own player not sent (inuse %d client %d owner %d)\n", player->inuse, player->client != NULL, ge->Coop_EntityOwner( 0 ) );
+		}
+	}
 	for ( int wire = 0; wire < limit; wire++ ) {
 		const int n = Coop_SwapEntNum( wire );	// ascending wire numbers keep the input sorted
 		if ( n == 1 || n >= limit ) {
@@ -333,6 +340,15 @@ qboolean CoopSnapshot_Parse( msg_t *msg ) {
 
 static void CoopSnapshot_ApplyChange( void *, int num, int change, const uint8_t *es, const uint8_t *ps, const uint8_t *ex ) {
 	if ( change == COOP_SNAPCHG_REMOVED ) {
+		if ( num == 1 ) {
+			// the partner's player only goes when the partner leaves our map (link reset, coop_ready, map change);
+			// a frame without it is a fault on the other side, see its "own player not sent" log line
+			static int logged;
+			if ( logged++ < 5 ) {
+				Com_Printf( "COOP: the partner's frame %d no longer has its player (applied %d), puppet kept\n", rxIncomingFrame, rxAppliedFrame );
+			}
+			return;
+		}
 		ge->Coop_FreeEntity( num );
 		return;
 	}
@@ -375,6 +391,10 @@ static void CoopSnapshot_Sweep( int frameNum ) {
 		if ( ge->Coop_EntityOwner( n ) != partner ) {
 			continue;
 		}
+		if ( n == 1 ) {
+			Com_Printf( "COOP: sweep keeps the partner's player\n" );
+			continue;
+		}
 		ge->Coop_FreeEntity( n );
 		removed++;
 	}
@@ -405,6 +425,7 @@ void CoopSnapshot_Frame( void ) {
 		rxAckFrame = -1;
 		return;
 	}
+	rxIncomingFrame = frameNum;
 	if ( CoopSnap_Diff( &rxRing, rxAppliedFrame, frameNum, CoopSnapshot_ApplyChange, NULL ) == 1 ) {
 		rxNeedSweep = qtrue;
 	}

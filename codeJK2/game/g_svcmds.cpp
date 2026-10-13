@@ -156,8 +156,8 @@ extern cvar_t	*g_skippingcin;
 		{// yes...   so stop skipping...
 			G_StopCinematicSkip();
 		}
-		else
-		{// no... so start skipping...
+		else if ( G_CoopCinematicSkipPressed() )
+		{// no... so start skipping... (coop: when both players want it)
 			G_StartCinematicSkip();
 		}
 	}
