@@ -195,6 +195,13 @@ compile_commands.json
 [Bb]uild*/
 cmake-build-*
 
-# coop build outputs
+# coop: only source goes in - no build outputs, packages, game runs or tool state
 build-ja/
 install/
+dist/
+.superpowers/
+qconsole.log
+*.log
+*.pk3
+*.dmp
+saves/
