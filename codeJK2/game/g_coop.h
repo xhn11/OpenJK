@@ -61,6 +61,8 @@ void		G_CoopSendPickup( const gentity_t *item );				// the partner gets this ite
 qboolean	G_CoopForwardThrow( gentity_t *self, gentity_t *target, qboolean pull );	// qtrue: the target's owner pushes it
 void		G_CoopForwardAlert( int type, const gentity_t *owner, const vec3_t pos, float radius, int alertLevel, float extra );	// AddSound/SightEvent
 void		G_CoopRunPuppet( gentity_t *ent );						// G_RunFrame, entity 1
+void		G_CoopUnstickBegin( gentity_t *ent );					// ClientThink_real around Pmove: partner bodies we are inside are not solid
+void		G_CoopUnstickEnd( void );
 void		G_CoopHurt_f( void );									// console: coop_hurt <entity> <damage>
 void		G_CoopUse_f( void );									// console: coop_use <entity>
 // NPC authority migration (g_coop_npc.cpp, design 6, 9)
@@ -124,5 +126,6 @@ void		G_CoopTriggerFrame( void );								// G_RunFrame (host): physical triggers
 void		G_CoopCenterPrint( const char *text );					// local only: coop messages (Czech, no diacritics: the fonts lack them)
 void		G_CoopNpcInfo_f( void );								// console: coop_npcinfo
 void		G_CoopDropPuppet_f( void );								// console: coop_droppuppet (testing)
+void		G_CoopNpcMove_f( void );								// console: coop_npcmove <npc> <x> <y> <z> (testing)
 void		G_CoopDropItem_f( void );								// console: coop_dropitem <classname> <x> <y> <z> (testing)
 int			G_CoopLastDroppedItem( void );						// the entity of the last coop_dropitem, -1: none

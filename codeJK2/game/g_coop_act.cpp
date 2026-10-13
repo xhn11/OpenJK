@@ -295,6 +295,38 @@ void G_CoopRunPuppet( gentity_t *ent ) {
 	}
 }
 
+// The partner moves its bodies (its player, the NPCs it runs) without our collision: with the delay one
+// can end up inside ours. A full overlap blocks every move of both (each trace starts and ends inside),
+// so for our own pmove a partner body we already overlap is not solid until we are apart.
+static gentity_t	*g_coopUnstuck[16];
+static int			g_coopUnstuckContents[16];
+static int			g_coopNumUnstuck;
+
+void G_CoopUnstickBegin( gentity_t *ent ) {
+	g_coopNumUnstuck = 0;
+	if ( g_coopMode == COOP_MODE_SOLO || !ent->client || !ent->linked ) {
+		return;
+	}
+	gentity_t *touch[MAX_GENTITIES];
+	const int num = gi.EntitiesInBox( ent->absmin, ent->absmax, touch, MAX_GENTITIES );
+	for ( int i = 0; i < num && g_coopNumUnstuck < (int)ARRAY_LEN( g_coopUnstuck ); i++ ) {
+		gentity_t *hit = touch[i];
+		if ( hit == ent || !hit->client || !( hit->contents & CONTENTS_BODY ) || G_CoopRunsLocally( hit ) ) {
+			continue;
+		}
+		g_coopUnstuck[g_coopNumUnstuck] = hit;
+		g_coopUnstuckContents[g_coopNumUnstuck++] = hit->contents;
+		hit->contents &= ~CONTENTS_BODY;
+	}
+}
+
+void G_CoopUnstickEnd( void ) {
+	for ( int i = 0; i < g_coopNumUnstuck; i++ ) {
+		g_coopUnstuck[i]->contents = g_coopUnstuckContents[i];
+	}
+	g_coopNumUnstuck = 0;
+}
+
 // ---------------------------------------------------------------- dispatcher
 
 typedef struct {

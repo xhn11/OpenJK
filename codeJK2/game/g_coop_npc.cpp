@@ -517,6 +517,20 @@ void G_CoopNpcInfo_f( void ) {
 	}
 }
 
+// console: coop_npcmove <entity> <x> <y> <z> - put one of our NPCs there, no telefrag (testing overlaps)
+void G_CoopNpcMove_f( void ) {
+	gentity_t *ent = G_CoopEntFromNum( atoi( gi.argv( 1 ) ) );
+	if ( gi.argc() != 5 || !ent || !ent->NPC || !G_CoopOwnsEnt( ent ) ) {
+		gi.Printf( "usage: coop_npcmove <our npc entity> <x> <y> <z>\n" );
+		return;
+	}
+	vec3_t origin = { (float)atof( gi.argv( 2 ) ), (float)atof( gi.argv( 3 ) ), (float)atof( gi.argv( 4 ) ) };
+	G_SetOrigin( ent, origin );
+	VectorCopy( origin, ent->client->ps.origin );
+	gi.linkentity( ent );
+	gi.Printf( "COOP: npc %d moved to %.0f %.0f %.0f\n", ent->s.number, origin[0], origin[1], origin[2] );
+}
+
 // console: coop_droppuppet - free the partner's puppet here (testing the snapshot self-repair)
 void G_CoopDropPuppet_f( void ) {
 	if ( g_entities[1].inuse && !G_CoopOwnsEnt( &g_entities[1] ) ) {

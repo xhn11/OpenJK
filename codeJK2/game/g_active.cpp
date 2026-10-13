@@ -2769,7 +2769,9 @@ extern cvar_t	*g_skippingcin;
 	VectorCopy( client->ps.origin, oldOrigin );
 
 	// perform a pmove
+	G_CoopUnstickBegin( ent );	// coop: a partner body we are inside does not hold us
 	Pmove( &pm );
+	G_CoopUnstickEnd();
 
 	// save results of pmove
 	if ( ent->client->ps.eventSequence != oldEventSequence )
