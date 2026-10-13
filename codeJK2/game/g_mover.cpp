@@ -339,9 +339,10 @@ qboolean G_MoverPush( gentity_t *pusher, vec3_t move, vec3_t amove, gentity_t **
 	// see if any solid entities are inside the final position
 	for ( e = 0 ; e < listedEntities ; e++ ) {
 		check = entityList[ e ];
-		if ( g_coopMode != COOP_MODE_SOLO && !G_CoopOwnsEnt( check ) )
+		if ( g_coopMode != COOP_MODE_SOLO && ( !G_CoopOwnsEnt( check ) || ( check == G_CoopStandIn() && !check->contents ) ) )
 		{//coop: a mover pushes and crushes only what this machine runs - the partner's player and NPCs
-		 //ride and get crushed on the partner's machine, which replays the mover (design 4)
+		 //ride and get crushed on the partner's machine, which replays the mover (design 4). The hidden
+		 //stand-in stands where player 2 is: it must not block (and so shift) the host's mover either.
 			continue;
 		}
 

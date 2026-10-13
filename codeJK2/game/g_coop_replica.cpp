@@ -259,6 +259,26 @@ static void G_CoopReplicaWeaponModel( gentity_t *ent, int oldWeapon ) {
 	}
 }
 
+static qboolean G_CoopSameMove( const trajectory_t *a, const trajectory_t *b ) {
+	return (qboolean)( a->trType == b->trType && a->trDuration == b->trDuration
+		&& VectorCompare( a->trBase, b->trBase ) && VectorCompare( a->trDelta, b->trDelta ) );
+}
+
+// a mover runs its moves here by itself (design 4): the host's trajectory counts only when a new move starts.
+// The same move with a shifted start (the host's mover was blocked a moment) or the host arriving a little
+// earlier than our clock would only jerk ours.
+static qboolean G_CoopKeepLocalMove( const trajectory_t *local, const trajectory_t *host ) {
+	if ( G_CoopSameMove( local, host ) ) {
+		return qtrue;	// at most trTime differs
+	}
+	if ( host->trType == TR_STATIONARY && ( local->trType == TR_LINEAR_STOP || local->trType == TR_NONLINEAR_STOP ) ) {
+		vec3_t end;
+		EvaluateTrajectory( local, local->trTime + local->trDuration, end );
+		return (qboolean)( Distance( end, host->trBase ) < 1.0f );	// ours gets there itself
+	}
+	return qfalse;
+}
+
 void G_Coop_ApplyEntity( int entNum, const entityState_t *es, const playerState_t *ps, const coopEntExtra_t *ex ) {
 	if ( g_coopMode == COOP_MODE_SOLO || entNum < 1 || entNum >= ENTITYNUM_MAX_NORMAL ) {
 		return;		// entity 0 is always our own player
@@ -295,8 +315,17 @@ void G_Coop_ApplyEntity( int entNum, const entityState_t *es, const playerState_
 	const int oldWeapon = ( ent->client && !fresh ) ? ent->client->ps.weapon : WP_NONE;
 	const int oldLegs = ( ent->client && !fresh ) ? ent->client->ps.legsAnim : -1;		// -1: no animation yet, set it
 	const int oldTorso = ( ent->client && !fresh ) ? ent->client->ps.torsoAnim : -1;
+	const trajectory_t localPos = ent->s.pos, localApos = ent->s.apos;
 	ent->s = *es;
 	ent->s.number = entNum;
+	if ( !fresh && es->eType == ET_MOVER ) {
+		if ( G_CoopKeepLocalMove( &localPos, &es->pos ) ) {
+			ent->s.pos = localPos;
+		}
+		if ( G_CoopKeepLocalMove( &localApos, &es->apos ) ) {
+			ent->s.apos = localApos;
+		}
+	}
 	if ( ent->client && ps ) {
 		char *saberModel = ent->client->ps.saberModel;	// a pointer into this machine's memory (plan-M3 R1)
 		const int saberEntityNum = ent->client->ps.saberEntityNum;	// the puppet's saber entity is ours
