@@ -3487,10 +3487,6 @@ extern void RunEmplacedWeapon( gentity_t *ent, usercmd_t **ucmd );
 	{//coop: the logs tell who died and how
 		gi.Printf( "COOP: our player was killed by %s (mod %d)\n", attacker && attacker->classname ? attacker->classname : "nothing", meansOfDeath );
 	}
-	if ( g_coopMode == COOP_MODE_GUEST && self->NPC && self->s.number >= MAX_CLIENTS && G_CoopOwnsEnt( self ) )
-	{//coop: deaths belong to the host (its scripts and counters count them) - this one slipped through
-		gi.Printf( S_COLOR_YELLOW"COOP: npc %d (%s) died on the guest, the host does not see its death\n", self->s.number, self->NPC_type ? self->NPC_type : "?" );
-	}
 	if ( attacker && attacker->s.number == 1 && G_IsPlayer( attacker ) && self->client
 		&& ( self->client->playerTeam == TEAM_ENEMY || ( self->NPC && self->NPC->charmedTime > level.time ) ) )
 	{//coop: the partner killed it, its statistics count it (design 24)
@@ -4812,18 +4808,6 @@ void G_Damage( gentity_t *targ, gentity_t *inflictor, gentity_t *attacker, vec3_
 	if ( G_CoopNoFriendlyFire( targ, attacker ) )
 	{//coop: the players do not hurt each other (design 20)
 		return;
-	}
-	{//coop: what this hit will take, as below (hit location, DEMP2 at most x5), so a killing blow is known before it lands
-		float coopTake = damage;
-		if ( mod == MOD_DEMP2 || mod == MOD_DEMP2_ALT )
-		{
-			coopTake *= 5;
-		}
-		if ( ( !(dflags&DAMAGE_NO_HIT_LOC) || !(dflags&DAMAGE_RADIUS) ) && !G_NonLocationSpecificDamage( mod ) && hitLoc >= 0 && hitLoc < HL_MAX )
-		{
-			coopTake = ceil( coopTake*damageModifier[hitLoc] );
-		}
-		G_CoopNpcBeforeDamage( targ, (int)coopTake );
 	}
 	if ( G_CoopBlockDamage( targ ) )
 	{//coop: only the owner of targ applies damage, we send the hit there (design 7)

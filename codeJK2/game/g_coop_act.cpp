@@ -390,6 +390,7 @@ static const coopGameCmd_t coopGameCmds[] = {
 	{ "npcgive",	G_CoopCmd_Npc },
 	{ "npctaken",	G_CoopCmd_Npc },
 	{ "npcreq",	G_CoopCmd_Npc },
+	{ "npcdie",	G_CoopCmd_Npc },
 };
 
 void G_Coop_GameCommand( void ) {

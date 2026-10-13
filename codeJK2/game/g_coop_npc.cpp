@@ -407,12 +407,42 @@ qboolean G_CoopPullAllToHost( qboolean pull ) {
 	return qtrue;
 }
 
-// guest: a killing blow on an NPC we run goes to the host with the NPC (deaths run there, design 6)
-void G_CoopNpcBeforeDamage( gentity_t *targ, int damage ) {
-	if ( g_coopMode == COOP_MODE_GUEST && targ->NPC && targ->client && targ->s.number >= MAX_CLIENTS
-		&& G_CoopOwnsEnt( targ ) && g_coopMig[targ->s.number] == COOP_MIG_NONE && damage >= targ->health ) {
-		G_CoopGiveNpc( targ );
+// ---------------------------------------------------------------- deaths (design 6)
+// NPC deaths run on the host only: its scripts, counters (NPC_target) and saves see every one. A guest
+// NPC that dies, however it dies, does not die here: it goes home and the host runs the death.
+
+// GEntity_DieFunc, guest: qtrue when the host runs this death
+qboolean G_CoopNpcDeathToHost( gentity_t *self, gentity_t *inflictor, gentity_t *attacker, int damage, int mod, int dflags, int hitLoc ) {
+	if ( g_coopMode != COOP_MODE_GUEST || !self->NPC || !self->client || self->s.number < MAX_CLIENTS
+		|| !G_CoopOwnsEnt( self ) || !G_CoopPartnerInWorld() ) {
+		return qfalse;
 	}
+	const int num = self->s.number;
+	if ( g_coopMig[num] == COOP_MIG_NONE ) {
+		G_CoopGiveNpc( self );
+	}
+	if ( g_coopMig[num] != COOP_MIG_GIVING ) {
+		return qfalse;
+	}
+	G_CoopSend( "npcdie %d %d %d %d %d %d %d %d", G_CoopWireNum( num ), G_CoopEntNumOf( inflictor ), G_CoopEntNumOf( attacker ),
+		damage, mod, dflags, hitLoc, self->health );
+	gi.Printf( "COOP: npc %d (%s) killed here, it dies on the host\n", num, self->NPC_type );
+	return qtrue;
+}
+
+static void G_CoopCmd_NpcDie( void ) {	// host: comes after the "npcgive" of the same NPC
+	gentity_t *ent = G_CoopEntFromNum( atoi( gi.argv( 2 ) ) );
+	if ( g_coopMode != COOP_MODE_HOST || !ent || !ent->NPC || !ent->client || !G_CoopOwnsEnt( ent ) ) {
+		gi.Printf( "COOP: npc %d death from the guest lost\n", atoi( gi.argv( 2 ) ) );
+		return;
+	}
+	gentity_t *inflictor = G_CoopEntFromNum( atoi( gi.argv( 3 ) ) );
+	gentity_t *attacker = G_CoopEntFromNum( atoi( gi.argv( 4 ) ) );
+	const int health = atoi( gi.argv( 9 ) );
+	ent->health = ent->client->ps.stats[STAT_HEALTH] = health < 0 ? health : 0;
+	gi.Printf( "COOP: npc %d (%s) killed on the guest by %d\n", ent->s.number, ent->NPC_type, attacker ? attacker->s.number : -1 );
+	GEntity_DieFunc( ent, inflictor ? inflictor : &g_entities[ENTITYNUM_WORLD], attacker ? attacker : &g_entities[ENTITYNUM_WORLD],
+		atoi( gi.argv( 5 ) ), atoi( gi.argv( 6 ) ), atoi( gi.argv( 7 ) ), atoi( gi.argv( 8 ) ) );
 }
 
 // the host freed / reclaims a guest NPC instead of losing it (G_Coop_FreeEntity)
@@ -476,6 +506,8 @@ void G_CoopNpcCommand( const char *name ) {
 		G_CoopCmd_NpcTaken();
 	} else if ( !Q_stricmp( name, "npcreq" ) ) {
 		G_CoopCmd_NpcRequest();
+	} else if ( !Q_stricmp( name, "npcdie" ) ) {
+		G_CoopCmd_NpcDie();
 	}
 }
 

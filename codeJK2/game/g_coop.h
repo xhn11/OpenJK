@@ -71,7 +71,7 @@ void		G_CoopNpcFrame( void );									// G_RunFrame (host): who should run which
 qboolean	G_CoopNpcGiving( const gentity_t *ent );				// handed to the partner, frozen until it confirms
 void		G_CoopGiveNpc( gentity_t *ent );
 qboolean	G_CoopPullAllToHost( qboolean pull );					// host: qtrue when every NPC is home
-void		G_CoopNpcBeforeDamage( gentity_t *targ, int damage );	// G_Damage: a guest's killing blow sends the NPC home
+qboolean	G_CoopNpcDeathToHost( gentity_t *self, gentity_t *inflictor, gentity_t *attacker, int damage, int mod, int dflags, int hitLoc );	// GEntity_DieFunc: a guest NPC dies on the host
 qboolean	G_CoopNpcKeep( gentity_t *ent );						// host: a guest NPC that would be freed comes home
 void		G_CoopNpcCommand( const char *name );
 void		G_CoopNpcs_f( void );									// console: coop_npcs

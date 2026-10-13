@@ -388,6 +388,11 @@ void GEntity_DieFunc(gentity_t *self, gentity_t *inflictor, gentity_t *attacker,
 //#define DIECASE(blah) case dieF_ ## blah: blah(self,inflictor,attacker,damage,mod); OutputDebugString(va("%s\n",#blah));break;
 #define DIECASE(blah) case dieF_ ## blah: blah(self,inflictor,attacker,damage,mod,dFlags,hitLoc); break;
 
+	if ( G_CoopNpcDeathToHost( self, inflictor, attacker, damage, mod, dFlags, hitLoc ) )
+	{//coop: a guest NPC dies on the host, where its scripts and counters run (design 6)
+		return;
+	}
+
 	switch (self->e_DieFunc)
 	{
 	case dieF_NULL:
