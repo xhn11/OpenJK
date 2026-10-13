@@ -3483,6 +3483,11 @@ extern void RunEmplacedWeapon( gentity_t *ent, usercmd_t **ucmd );
 		G_UseTargets( self, self );
 	}
 
+	if ( attacker && attacker->s.number == 1 && G_IsPlayer( attacker ) && self->client
+		&& ( self->client->playerTeam == TEAM_ENEMY || ( self->NPC && self->NPC->charmedTime > level.time ) ) )
+	{//coop: the partner killed it, its statistics count it (design 24)
+		G_CoopSend( "killed" );
+	}
 	if ( attacker )
 	{
 		if ( attacker->client && !attacker->s.number )

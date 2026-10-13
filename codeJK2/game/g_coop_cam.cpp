@@ -198,7 +198,7 @@ qboolean G_CoopCinematicSkipPressed( void ) {
 	}
 	if ( g_coopMode == COOP_MODE_GUEST ) {
 		G_CoopSend( "skipreq" );
-		gi.SendServerCommand( 0, "cp \"Skip requested, waiting for the partner\"" );
+		G_CoopCenterPrint( "Preskoceni pozadano, ceka se na partnera" );
 		return qfalse;
 	}
 	const qboolean doublePress = (qboolean)( g_coopSkipHost && level.time - g_coopSkipHost < COOP_SKIP_DOUBLE_MS );
@@ -208,7 +208,7 @@ qboolean G_CoopCinematicSkipPressed( void ) {
 		g_coopSkipHost = g_coopSkipGuest = 0;
 		return qtrue;
 	}
-	gi.SendServerCommand( 0, "cp \"Waiting for the partner (press again to skip)\"" );
+	G_CoopCenterPrint( "Ceka se na partnera (dalsi stisk preskoci)" );
 	return qfalse;
 }
 
@@ -221,7 +221,7 @@ static void G_CoopCmd_SkipRequest( void ) {
 		G_CoopSkipNow();
 		return;
 	}
-	gi.SendServerCommand( 0, "cp \"The partner wants to skip the cutscene\"" );
+	G_CoopCenterPrint( "Partner chce preskocit cutscenu" );
 }
 
 void G_CoopCamCommand( const char *name ) {

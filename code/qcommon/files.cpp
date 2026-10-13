@@ -3167,3 +3167,33 @@ qboolean FS_WriteToTemporaryFile( const void *data, size_t dataLength, char **te
 	// SP doesn't need to do this.
 	return qfalse;
 }
+
+/*
+================
+FS_CoopPakChecksum
+
+coop (design 28): one number for the game data both players must share - the checksums of the loaded
+base assets*.pk3 and zz_coop.pk3, each name counted once (a pk3 can be found in more than one path)
+================
+*/
+int FS_CoopPakChecksum( void ) {
+	char	seen[32][MAX_QPATH];
+	int		numSeen = 0;
+	int		sum = 0;
+	for ( searchpath_t *search = fs_searchpaths; search; search = search->next ) {
+		const pack_t *pak = search->pack;
+		if ( !pak || ( Q_stricmpn( pak->pakBasename, "assets", 6 ) && Q_stricmp( pak->pakBasename, "zz_coop" ) ) ) {
+			continue;
+		}
+		qboolean dup = qfalse;
+		for ( int i = 0; i < numSeen && !dup; i++ ) {
+			dup = (qboolean)!Q_stricmp( seen[i], pak->pakBasename );
+		}
+		if ( dup || numSeen == (int)ARRAY_LEN( seen ) ) {
+			continue;
+		}
+		Q_strncpyz( seen[numSeen++], pak->pakBasename, MAX_QPATH );
+		sum += pak->checksum;
+	}
+	return sum;
+}

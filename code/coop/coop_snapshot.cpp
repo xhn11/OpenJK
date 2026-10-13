@@ -171,6 +171,8 @@ static void CoopSnapshot_SwapPlayerState( playerState_t *ps ) {
 static int CoopSnapshot_Gather( void ) {
 	const gentity_t *player = SV_GentityNum( 0 );
 	const int playerSaber = ( player->inuse && player->client ) ? player->client->saberEntityNum : ENTITYNUM_NONE;
+	const gentity_t *puppet = SV_GentityNum( 1 );	// its thrown saber is our local copy of the partner's (never sent)
+	const int puppetSaber = ( puppet->inuse && puppet->client ) ? puppet->client->saberEntityNum : ENTITYNUM_NONE;
 	const int limit = ge->num_entities < COOP_SNAP_MAX_NUM ? ge->num_entities : COOP_SNAP_MAX_NUM;
 	const coopOwner_t self = CoopSnapshot_Self();
 	int count = 0, psCount = 0;
@@ -180,7 +182,7 @@ static int CoopSnapshot_Gather( void ) {
 			continue;	// entity 1 is the partner's puppet, never ours
 		}
 		gentity_t *ent = SV_GentityNum( n );
-		if ( !ent->inuse || ( n == playerSaber && n != 0 ) || ( ent->s.eFlags & EF_PERMANENT ) ) {	// no saber: 0
+		if ( !ent->inuse || ( n == playerSaber && n != 0 ) || ( n == puppetSaber && n != 0 ) || ( ent->s.eFlags & EF_PERMANENT ) ) {	// no saber: 0
 			continue;
 		}
 		const qboolean visible = (qboolean)( ent->linked && !( ent->svFlags & SVF_NOCLIENT ) );

@@ -63,7 +63,7 @@ static void G_CoopRevive( gentity_t *ent, const vec3_t near ) {
 	cl->ps.legsAnimTimer = cl->ps.torsoAnimTimer = 0;
 	NPC_SetAnim( ent, SETANIM_BOTH, BOTH_STAND2, SETANIM_FLAG_OVERRIDE );
 	G_CoopTeleportNear( ent, near );
-	gi.SendServerCommand( 0, "cp \"\"" );
+	G_CoopCenterPrint( "" );
 	gi.Printf( "COOP: respawned next to the partner\n" );
 }
 
@@ -96,7 +96,7 @@ qboolean G_CoopRespawnThink( gentity_t *ent ) {
 	if ( left > 0 ) {
 		if ( left != g_coopLastCountdown ) {
 			g_coopLastCountdown = left;
-			gi.SendServerCommand( 0, va( "cp \"Respawn in %d\"", left ) );
+			G_CoopCenterPrint( va( "Respawn za %d", left ) );
 		}
 		return qtrue;
 	}
@@ -104,7 +104,7 @@ qboolean G_CoopRespawnThink( gentity_t *ent ) {
 	if ( !G_CoopFindSpotNear( ent, partner->currentOrigin, spot ) ) {
 		if ( g_coopLastCountdown != 0 ) {
 			g_coopLastCountdown = 0;
-			gi.SendServerCommand( 0, "cp \"Waiting for the partner to reach a safe spot\"" );
+			G_CoopCenterPrint( "Ceka se, az bude partner na bezpecnem miste" );
 		}
 		return qtrue;
 	}
@@ -299,7 +299,7 @@ void G_CoopSkipLevel_f( void ) {
 
 static void G_CoopCmd_SkipLevel( void ) {	// host: the guest asks
 	if ( g_coopMode == COOP_MODE_HOST ) {
-		gi.SendServerCommand( 0, "cp \"The partner wants to skip this level (coop_skiplevel)\"" );
+		G_CoopCenterPrint( "Partner chce preskocit level (coop_skiplevel)" );
 	}
 }
 

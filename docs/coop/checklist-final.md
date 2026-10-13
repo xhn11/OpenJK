@@ -31,4 +31,6 @@ Ke každému bodu si poznamenej OK nebo co je špatně (případně s `qconsole.
 18. Guest otevře menu (Esc) a hra u hosta běží dál.
 
 ## Menu (M11)
-19. V hlavním menu je tlačítko COOP a menu jde ovládat (jméno, heslo, hostovat, připojit).
+19. V hlavním menu je tlačítko COOP a menu jde ovládat: jméno, heslo, hostovat, „Najit hry v LAN“ (vyplní IP) a připojit.
+20. Luke (od ns_streets nebo po `coop_skiplevel` z yavin_trial) hodí meč a partner vidí meč letět.
+21. Když host ukončí hru, guest skončí v hlavním menu s hláškou „hostitel opustil hru“.

@@ -14,6 +14,7 @@ param(
   [string[]]$RejectHost = @(),
   [string[]]$RejectGuest = @(),
   [switch]$NoGuest,
+  [switch]$GuestNoMap,	# the guest never loads a map (e.g. only coop_find): skip its game DLL check
   [switch]$Visible
 )
 $ErrorActionPreference = "Stop"
@@ -55,14 +56,14 @@ try {
   }
 }
 
-function Test-Log([string]$name, [string[]]$patterns, [string[]]$rejects) {
+function Test-Log([string]$name, [string[]]$patterns, [string[]]$rejects, [bool]$needGame = $true) {
   $log = Get-ChildItem -Recurse -Filter qconsole.log "$work\$name" -ErrorAction SilentlyContinue | Select-Object -First 1
   if (-not $log) { if ($patterns.Count) { Write-Host "[FAIL] ${name}: no qconsole.log"; return $false }; return $true }
   $text = Get-Content $log.FullName -Raw
   $ok = $true
   if ($text -match 'Failed to load jospgame') { Write-Host "[FAIL] ${name}: game DLL failed to load"; $ok = $false }
   # from M3 on the guest loads the host's map too, so both must have loaded the game DLL
-  $patterns = @('------- Game Initialization -------') + $patterns
+  if ($needGame) { $patterns = @('------- Game Initialization -------') + $patterns }
   foreach ($p in $patterns) {
     if ($text -match $p) { Write-Host "[PASS] $name ~ $p" } else { Write-Host "[FAIL] $name missing: $p"; $ok = $false }
   }
@@ -72,5 +73,5 @@ function Test-Log([string]$name, [string[]]$patterns, [string[]]$rejects) {
   return $ok
 }
 if (-not (Test-Log "host" $ExpectHost $RejectHost)) { $failed = $true }
-if (-not $NoGuest -and -not (Test-Log "guest" $ExpectGuest $RejectGuest)) { $failed = $true }
+if (-not $NoGuest -and -not (Test-Log "guest" $ExpectGuest $RejectGuest (-not $GuestNoMap))) { $failed = $true }
 if ($failed) { exit 1 } else { Write-Host "SMOKE PASS"; exit 0 }

@@ -1281,6 +1281,7 @@ void G_RunFrame( int levelTime ) {
 	G_CoopAlliesFollow();
 	G_CoopStandInRunFrame();
 	G_CoopClaimFrame();
+	G_CoopTriggerFrame();
 	//ResetTeamCounters();
 
 	AI_UpdateGroups();

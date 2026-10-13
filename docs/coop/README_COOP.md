@@ -41,6 +41,7 @@ Druhý hráč se může připojit kdykoli. Objeví se vedle Kyla a dostane svou 
 |---|---|
 | `coop_host` | začít hostovat (pak `map` / `load`) |
 | `coop_connect ip[:port]` | připojit se |
+| `coop_find` | najít hry v místní síti (vyplní adresu v menu) |
 | `coop_disconnect` | odpojit |
 | `coop_status` | stav spojení, přenos v kbit/s |
 | `coop_say text` | zpráva partnerovi |
@@ -53,5 +54,5 @@ Druhý hráč se může připojit kdykoli. Objeví se vedle Kyla a dostane svou 
 
 - NPC postava, kterou hraje druhý hráč (Jan / Luke), zůstává ve hře jako neviditelný dublér, aby skripty mise fungovaly jako v originále. Ukáže se jen v cutscénách, kde hraje roli druhého hráče. Druhý hráč je mezitím schovaný a po cutscéně se objeví tam, kde dublér skončil.
 - Kulomety, věže a kamery v panelech ovládá ten, kdo je použil. Druhý hráč dostane „Occupied“.
-- Hozený meč partnera se zobrazuje nepřesně.
-- Texty v menu COOP jsou zatím anglicky.
+- Texty v menu a hláškách jsou česky bez diakritiky, protože herní fonty háčky a čárky neumí.
+- Oba hráči musí mít stejná data hry (soubory `base\assets*.pk3` a `zz_coop.pk3`). Hostitel jinak připojení odmítne. Kontrola se vypne příkazem `coop_checkPaks 0` na hostiteli.

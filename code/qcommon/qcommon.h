@@ -496,6 +496,7 @@ long		FS_FOpenFileRead( const char *qpath, fileHandle_t *file, qboolean uniqueFI
 
 // returns 1 if a file is in the PAK file, otherwise -1
 int	FS_FileIsInPAK(const char *filename );
+int	FS_CoopPakChecksum( void );	// coop: the base assets*.pk3 + zz_coop.pk3 both players must share
 static inline int FS_FileIsInPAK( const char *filename, int *checksum )
 {
 	return FS_FileIsInPAK( filename );

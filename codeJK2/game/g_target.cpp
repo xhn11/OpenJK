@@ -1074,6 +1074,7 @@ void target_secret_use(gentity_t *self, gentity_t *other, gentity_t *activator)
 	//we'll assume that the activator is the player
 	gclient_t* const client = &level.clients[0];
 	client->sess.missionStats.secretsFound++;
+	G_CoopSend( "secret" );	// coop: secrets count for both players (design 24)
 	if ( activator )
 	{
 		G_Sound( activator, self->noise_index );

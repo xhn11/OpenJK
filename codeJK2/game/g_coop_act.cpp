@@ -219,6 +219,9 @@ typedef struct {
 
 static void G_CoopCmd_Claimed( void );
 static void G_CoopCmd_MindTrick( void );
+static void G_CoopCmd_Killed( void );
+static void G_CoopCmd_Trigger( void );
+static void G_CoopCmd_Secret( void );
 static void G_CoopCmd_Busy( void );
 static void G_CoopCmd_Release( void );
 
@@ -250,6 +253,9 @@ static const coopGameCmd_t coopGameCmds[] = {
 	{ "fthrow",	G_CoopCmd_Throw },
 	{ "claimed",	G_CoopCmd_Claimed },
 	{ "mtrick",	G_CoopCmd_MindTrick },
+	{ "killed",	G_CoopCmd_Killed },
+	{ "trig",	G_CoopCmd_Trigger },
+	{ "secret",	G_CoopCmd_Secret },
 	{ "busy",	G_CoopCmd_Busy },
 	{ "release",	G_CoopCmd_Release },
 	{ "alert",	G_CoopCmd_Alert },
@@ -349,7 +355,7 @@ qboolean G_CoopClaimUse( gentity_t *self, gentity_t *activator ) {
 		return qtrue;
 	}
 	if ( activator->s.number == 0 && !G_CoopOwnsEnt( self ) ) {
-		gi.SendServerCommand( 0, "cp \"Occupied by the partner\"" );
+		G_CoopCenterPrint( "Obsazeno partnerem" );
 		return qtrue;
 	}
 	return qfalse;
@@ -370,7 +376,7 @@ static void G_CoopCmd_Claimed( void ) {		// guest
 }
 
 static void G_CoopCmd_Busy( void ) {		// guest
-	gi.SendServerCommand( 0, "cp \"Occupied by the partner\"" );
+	G_CoopCenterPrint( "Obsazeno partnerem" );
 }
 
 static void G_CoopCmd_Release( void ) {		// host
@@ -438,5 +444,61 @@ static void G_CoopCmd_MindTrick( void ) {
 	gentity_t *target = G_CoopLocalEnt( gi.argv( 3 ), qfalse );
 	if ( self && self->client && target && G_CoopOwnsEnt( target ) ) {
 		WP_CoopApplyMindTrick( self, target, atoi( gi.argv( 4 ) ) );
+	}
+}
+
+// ---------------------------------------------------------------- statistics (design 24)
+
+static void G_CoopCmd_Killed( void ) {		// our kill, the NPC died on the partner's machine
+	level.clients[0].sess.missionStats.enemiesKilled++;
+}
+
+static void G_CoopCmd_Secret( void ) {		// secrets are shared
+	level.clients[0].sess.missionStats.secretsFound++;
+}
+
+// ---------------------------------------------------------------- physical triggers (design 17)
+// The guest runs trigger_push / trigger_teleport / trigger_hurt for its own player from its own map
+// copy; whether one is switched on or off is the host's (scripts), so the host sends the changes.
+
+static signed char g_coopTrigSent[MAX_GENTITIES];	// -1 unknown, 0 inactive, 1 active
+
+void G_CoopTriggerFrame( void ) {
+	static qboolean hadPartner;
+	if ( g_coopMode != COOP_MODE_HOST ) {
+		return;
+	}
+	const qboolean partner = G_CoopPartnerInWorld();
+	if ( !partner || !hadPartner ) {
+		memset( g_coopTrigSent, -1, sizeof( g_coopTrigSent ) );	// a (new) guest gets every state
+	}
+	hadPartner = partner;
+	if ( !partner ) {
+		return;
+	}
+	for ( int i = MAX_CLIENTS; i < globals.num_entities; i++ ) {
+		const gentity_t *ent = &g_entities[i];
+		if ( !ent->inuse || !G_CoopIsPhysicalTrigger( ent ) ) {
+			continue;
+		}
+		const signed char active = ( ent->svFlags & SVF_INACTIVE ) ? 0 : 1;
+		if ( g_coopTrigSent[i] == active || ( g_coopTrigSent[i] == -1 && active ) ) {
+			g_coopTrigSent[i] = active;		// active is how the map starts: nothing to send
+			continue;
+		}
+		g_coopTrigSent[i] = active;
+		G_CoopSend( "trig %d %d", i, active );
+	}
+}
+
+static void G_CoopCmd_Trigger( void ) {		// guest
+	gentity_t *ent = G_CoopLocalEnt( gi.argv( 2 ), qfalse );
+	if ( g_coopMode != COOP_MODE_GUEST || !ent || !G_CoopIsPhysicalTrigger( ent ) ) {
+		return;
+	}
+	if ( atoi( gi.argv( 3 ) ) ) {
+		ent->svFlags &= ~SVF_INACTIVE;
+	} else {
+		ent->svFlags |= SVF_INACTIVE;
 	}
 }

@@ -40,6 +40,8 @@ $tests = [ordered]@{
   S24 = "-Seconds 90 -HostArgs '+set coop_onworld \`"wait 3000; coop_skiplevel\`"','+coop_host' -HostAfterMap '+wait 100' -GuestArgs '+coop_connect 127.0.0.1:29170' -ExpectHost 'COOP: skipping kejim_post -> kejim_base','Server: kejim_base' -ExpectGuest 'COOP: loading kejim_base from host','Server: kejim_base','COOP: in kejim_base' -RejectHost 'link closed' -RejectGuest 'link closed'"
   # M7: g_coopFriendlyFire 0 (default) - the players do not hurt each other
   S25 = "-Seconds 50 -HostArgs '+set coop_onworld \`"wait 3000; coop_hurt 1 7\`"','+coop_host' -HostAfterMap '+wait 100' -GuestArgs '+coop_connect 127.0.0.1:29170' -ExpectHost 'COOP: guest synced' -ExpectGuest 'COOP: world synced' -RejectHost 'link closed' -RejectGuest 'link closed','COOP: hit on 0'"
+  # M11: LAN discovery fills the menu's address
+  S26 = "-Seconds 30 -GuestNoMap -HostArgs '+coop_host' -HostAfterMap '+wait 100' -GuestArgs '+wait 3000','+coop_find','+wait 3000','+coop_find' -ExpectGuest 'COOP: found \`"HostBot\`" at [0-9.:]+, map kejim_post','COOP: [1-9] game\(s\) found' -RejectHost 'link closed'"
   S18 ="-Seconds 50 -HostArgs '+set coop_onworld \`"wait 3000; coop_entinfo 1\`"','+coop_host' -HostAfterMap '+wait 100' -GuestArgs '+set coop_onworld \`"wait 500; setviewpos -100 200 30 0\`"','+coop_connect 127.0.0.1:29170' -ExpectHost 'COOP: entinfo 1 owner 2 class player .* origin -100 200' -ExpectGuest 'COOP: world synced' -RejectHost 'link closed' -RejectGuest 'link closed'"
 }
 $failed = @()

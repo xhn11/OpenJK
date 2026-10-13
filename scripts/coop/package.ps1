@@ -70,7 +70,7 @@ $coopButton = @'
 			name				coopbutton
 			group				othermain
 			text				"COOP"
-			descText			"Play the campaign with a friend over the network"
+			descText			"Kampan ve dvou pres sit"
 			type				ITEM_TYPE_BUTTON
 			style				WINDOW_STYLE_EMPTY
 			rect				245 444 130 24

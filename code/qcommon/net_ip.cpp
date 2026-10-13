@@ -86,6 +86,8 @@ qboolean NET_IP_Open( int port ) {
 		return qfalse;
 	}
 	NET_IP_SetBufferSize( s, SO_RCVBUF, "SO_RCVBUF" );
+	const int broadcast = 1;	// coop_find asks the whole LAN
+	setsockopt( s, SOL_SOCKET, SO_BROADCAST, (const char *)&broadcast, sizeof( broadcast ) );
 	NET_IP_SetBufferSize( s, SO_SNDBUF, "SO_SNDBUF" );
 	struct sockaddr_in addr;
 	memset( &addr, 0, sizeof( addr ) );

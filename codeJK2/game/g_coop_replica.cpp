@@ -53,6 +53,13 @@ void G_Coop_GetEntityExtra( int entNum, coopEntExtra_t *out ) {
 	out->areaPortalOpen = G_CoopPortalCount( entNum );
 	out->triggerEnabled = ( ent->svFlags & SVF_INACTIVE ) ? 0 : 1;
 	out->buttons = ent->client ? ent->client->usercmd.buttons : 0;
+	if ( ent->client && ent->client->ps.saberInFlight && ent->client->ps.saberEntityNum > 0
+		&& ent->client->ps.saberEntityNum < ENTITYNUM_WORLD && g_entities[ent->client->ps.saberEntityNum].inuse ) {
+		const gentity_t *saber = &g_entities[ent->client->ps.saberEntityNum];
+		out->saberInFlight = 1;
+		VectorCopy( saber->currentOrigin, out->saberOrigin );
+		VectorCopy( saber->currentAngles, out->saberAngles );
+	}
 }
 
 static gentity_t *G_CoopEntityPtr( int num ) {
@@ -108,6 +115,55 @@ static gentity_t *G_CoopSpawnPuppet( const coopEntExtra_t *ex ) {
 	Q_strncpyz( ent->client->clientInfo.name, "partner", sizeof( ent->client->clientInfo.name ) );
 	gi.Printf( "COOP: partner puppet ready (%s)\n", type );
 	return ent;
+}
+
+// the partner's thrown saber (design 16): a local saber entity the puppet owns, placed every snapshot;
+// it touches nothing here, the thrower's machine decides what it hits
+static void G_CoopPuppetSaber( gentity_t *ent, const coopEntExtra_t *ex ) {
+	gclient_t *cl = ent->client;
+	if ( !cl ) {
+		return;
+	}
+	const int n = cl->ps.saberEntityNum;
+	gentity_t *saber = ( n > 0 && n < ENTITYNUM_WORLD && g_entities[n].inuse && g_entities[n].owner == ent ) ? &g_entities[n] : NULL;
+	if ( !ex->saberInFlight ) {
+		cl->ps.saberInFlight = qfalse;
+		if ( saber && saber->linked ) {
+			gi.unlinkentity( saber );
+		}
+		return;
+	}
+	if ( !saber ) {
+		saber = G_Spawn();
+		saber->classname = "lightsaber";
+		saber->s.eType = ET_GENERAL;
+		saber->svFlags = SVF_USE_CURRENT_ORIGIN;
+		saber->s.weapon = WP_SABER;
+		saber->owner = ent;
+		saber->s.otherEntityNum = ent->s.number;
+		VectorSet( saber->mins, -3.0f, -3.0f, -3.0f );
+		VectorSet( saber->maxs, 3.0f, 3.0f, 3.0f );
+		saber->s.modelindex = WP_SetSaberModel( cl, cl->NPC_class );
+		gi.G2API_InitGhoul2Model( saber->ghoul2, cl->ps.saberModel, saber->s.modelindex, NULL_HANDLE, NULL_HANDLE, 0, 0 );
+		gi.G2API_AddBolt( &saber->ghoul2[0], "*flash" );
+		cl->ps.saberEntityNum = saber->s.number;
+	}
+	saber->contents = 0;
+	saber->s.eFlags &= ~EF_NODRAW;
+	saber->svFlags &= ~SVF_NOCLIENT;
+	G_SetOrigin( saber, ex->saberOrigin );
+	G_SetAngles( saber, ex->saberAngles );
+	gi.linkentity( saber );
+}
+
+static void G_CoopFreePuppetSaber( gentity_t *ent ) {
+	if ( !ent->client ) {
+		return;
+	}
+	const int n = ent->client->ps.saberEntityNum;
+	if ( n > 0 && n < ENTITYNUM_WORLD && g_entities[n].inuse && g_entities[n].owner == ent ) {
+		G_FreeEntity( &g_entities[n] );
+	}
 }
 
 static gentity_t *G_CoopSpawnReplica( int num, const coopEntExtra_t *ex ) {
@@ -226,8 +282,12 @@ void G_Coop_ApplyEntity( int entNum, const entityState_t *es, const playerState_
 	ent->s.number = entNum;
 	if ( ent->client && ps ) {
 		char *saberModel = ent->client->ps.saberModel;	// a pointer into this machine's memory (plan-M3 R1)
+		const int saberEntityNum = ent->client->ps.saberEntityNum;	// the puppet's saber entity is ours
 		ent->client->ps = *ps;
 		ent->client->ps.saberModel = saberModel;
+		if ( entNum == 1 ) {
+			ent->client->ps.saberEntityNum = saberEntityNum;
+		}
 		ent->client->usercmd.buttons = ex->buttons;
 	}
 	ent->spawnflags = ex->spawnflags;
@@ -259,6 +319,9 @@ void G_Coop_ApplyEntity( int entNum, const entityState_t *es, const playerState_
 		G_CoopReplicaAnims( ent, oldLegs, oldTorso );
 		G_CoopReplicaWeaponModel( ent, oldWeapon );
 	}
+	if ( entNum == 1 ) {
+		G_CoopPuppetSaber( ent, ex );
+	}
 }
 
 void G_Coop_FreeEntity( int entNum ) {
@@ -269,6 +332,7 @@ void G_Coop_FreeEntity( int entNum ) {
 	if ( ent->inuse && !G_CoopOwnsEnt( ent ) ) {
 		if ( entNum == 1 ) {
 			gi.Printf( "COOP: partner puppet removed\n" );
+			G_CoopFreePuppetSaber( ent );
 		} else if ( G_CoopNpcKeep( ent ) || G_CoopClaimKeep( ent ) ) {
 			return;
 		}

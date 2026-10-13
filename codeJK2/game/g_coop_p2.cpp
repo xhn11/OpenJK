@@ -19,6 +19,10 @@ static qboolean		g_coopP2Sent;
 static int			g_coopP2ForceSent[NUM_FORCE_POWERS + 1];
 static int			g_coopP2NextForceCheck;
 static cvar_t		*coop_lukeForceBonus;
+static int			g_coopStandIn = -1;			// the stand-in (bottom of this file)
+static int			g_coopStandInContents;
+static qboolean		g_coopStandInHidden;
+static qboolean		g_coopStandInGod;
 
 const char *G_CoopP2Name( void ) {
 	return g_coopP2Char == COOP_P2_LUKE ? "luke" : "jan";
@@ -34,6 +38,9 @@ void G_CoopP2Init( void ) {
 	g_coopP2NextForceCheck = 0;
 	memset( g_coopP2ForceSent, -1, sizeof( g_coopP2ForceSent ) );
 	coop_lukeForceBonus = gi.cvar( "coop_lukeForceBonus", "0", CVAR_ARCHIVE );
+	g_coopStandIn = -1;
+	g_coopStandInHidden = qfalse;
+	g_coopStandInGod = qfalse;
 }
 
 // ---------------------------------------------------------------- placing player 2 next to Kyle
@@ -229,9 +236,6 @@ void G_CoopP2Frame( void ) {
 
 extern bool		in_camera;
 
-static int		g_coopStandIn = -1;
-static int		g_coopStandInContents;
-static qboolean	g_coopStandInHidden;
 
 gentity_t *G_CoopStandIn( void ) {
 	if ( g_coopStandIn >= 0 ) {
@@ -262,8 +266,15 @@ static void G_CoopStandInFrame( void ) {
 	if ( !ent ) {
 		return;
 	}
-	const qboolean hide = (qboolean)( G_CoopPartnerInWorld() && !in_camera );
-	ent->flags |= FL_GODMODE;	// never dies while player 2 plays it (design 12: not a mission failure)
+	const qboolean partner = G_CoopPartnerInWorld();
+	const qboolean hide = (qboolean)( partner && !in_camera );
+	if ( partner && !( ent->flags & FL_GODMODE ) ) {
+		ent->flags |= FL_GODMODE;	// never dies while player 2 plays it (design 12: not a mission failure)
+		g_coopStandInGod = qtrue;
+	} else if ( !partner && g_coopStandInGod ) {
+		ent->flags &= ~FL_GODMODE;	// without a guest the SP rules apply
+		g_coopStandInGod = qfalse;
+	}
 	if ( hide ) {
 		if ( !g_coopStandInHidden ) {
 			g_coopStandInContents = ent->contents;

@@ -140,6 +140,7 @@ void Coop_OnLinkDown( const char *reason ) {
 	if ( coop.role == COOP_ROLE_GUEST && sess.mapGen ) {
 		// design 23: without the host the guest's world stops; leave instead of playing on with frozen replicas
 		Com_Printf( "COOP: host left (%s), leaving the game\n", reason );
+		Cvar_Set( "com_errorMessage", va( "Coop: hostitel opustil hru (%s)", reason ) );	// the main menu shows it
 		Cbuf_AddText( "disconnect\n" );
 	}
 	CoopCS_LinkReset();

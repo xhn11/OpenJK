@@ -290,3 +290,9 @@ void G_CoopAlliesFollow( void ) {
 		}
 	}
 }
+
+// a centerprint on this machine only (gi.SendServerCommand "cp" from the host also goes to the guest)
+void G_CoopCenterPrint( const char *text ) {
+	extern void CG_CenterPrint( const char *str, int y );
+	CG_CenterPrint( text, SCREEN_HEIGHT * 0.25 );
+}
