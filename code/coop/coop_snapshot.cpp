@@ -25,6 +25,7 @@ static_assert( COOP_SNAP_MAX_NUM == MAX_GENTITIES, "coop_snap.h entity numbers" 
 #define COOP_SNAP_WIRE_HEADER	( 1 + 4 + 3 * 2 + 3 * 4 + 4 )
 #define COOP_EXTRAPOLATE_MS		250			// guest time runs at most this far past the newest snapshot
 #define COOP_TIME_JUMP_MS		500			// further behind than this, the guest jumps to the host's time
+#define COOP_TIME_SMOOTH		0.05		// how much of each snapshot's timing error the guest clock takes over
 
 static cvar_t			*coop_snapshotBytes;
 static coopSnapRing_t	txRing, rxRing;
@@ -53,6 +54,7 @@ static int				applyClients;
 static int				guestServerTime;
 static int				guestServerTimeAt;	// Sys_Milliseconds() when guestServerTime was applied
 static qboolean			guestHaveTime;
+static double			guestOffset;		// host time - Sys_Milliseconds(), smoothed: the guest's clock runs evenly (stutter on lifts)
 
 // the partner's eye position (design 8): from the coop_snapshot header (and coop_view, older peers)
 static vec3_t			peerView;
@@ -501,6 +503,9 @@ void CoopSnapshot_Frame( void ) {
 	if ( f && coop.role == COOP_ROLE_GUEST ) {
 		guestServerTime = f->serverTime;
 		guestServerTimeAt = Sys_Milliseconds();
+		const double offset = (double)guestServerTime - guestServerTimeAt;
+		// snapshots arrive unevenly: follow their average, not each one, or our frames bunch up and stall
+		guestOffset = ( !guestHaveTime || fabs( offset - guestOffset ) > COOP_TIME_JUMP_MS ) ? offset : guestOffset + ( offset - guestOffset ) * COOP_TIME_SMOOTH;
 		guestHaveTime = qtrue;
 	}
 	if ( !rxSynced && complete ) {
@@ -550,11 +555,10 @@ qboolean Coop_GuestAdvanceTime( int frameMsec ) {
 	if ( coop.role != COOP_ROLE_GUEST || !guestHaveTime || !Coop_GuestInWorld() ) {
 		return qfalse;
 	}
-	int elapsed = Sys_Milliseconds() - guestServerTimeAt;
-	if ( elapsed > COOP_EXTRAPOLATE_MS ) {
-		elapsed = COOP_EXTRAPOLATE_MS;
+	int target = (int)( Sys_Milliseconds() + guestOffset );
+	if ( target > guestServerTime + COOP_EXTRAPOLATE_MS ) {
+		target = guestServerTime + COOP_EXTRAPOLATE_MS;	// the host's snapshots stopped: wait for them
 	}
-	const int target = guestServerTime + elapsed;
 	if ( target - sv.time > COOP_TIME_JUMP_MS ) {
 		// first snapshot or a long stall: jump instead of running hundreds of frames
 		Com_Printf( "COOP: time jumps %d ms to the host's\n", target - sv.time );
