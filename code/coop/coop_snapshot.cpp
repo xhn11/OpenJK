@@ -352,6 +352,9 @@ qboolean CoopSnapshot_Parse( msg_t *msg ) {
 	}
 	memcpy( rxPending, blob, len );	// Coop_Frame applies it; only the newest one matters
 	rxPendingLen = len;
+	if ( rxSynced && Sys_Milliseconds() - rxLastReceived > COOP_HITCH_MS ) {
+		Com_Printf( "COOP: partner snapshot gap %d ms\n", Sys_Milliseconds() - rxLastReceived );	// stutter reports
+	}
 	rxLastReceived = Sys_Milliseconds();
 	VectorCopy( view, peerView );
 	peerViewValid = qtrue;
@@ -554,8 +557,19 @@ qboolean Coop_GuestAdvanceTime( int frameMsec ) {
 	const int target = guestServerTime + elapsed;
 	if ( target - sv.time > COOP_TIME_JUMP_MS ) {
 		// first snapshot or a long stall: jump instead of running hundreds of frames
+		Com_Printf( "COOP: time jumps %d ms to the host's\n", target - sv.time );
 		sv.time = target - frameMsec;
 		re.G2API_SetTime( sv.time, G2T_SV_TIME );
+	}
+	// stutter reports: our time waits for the host's snapshots (they stopped coming)
+	static int lastTime, lastMoved;
+	const int now = Sys_Milliseconds();
+	if ( target != lastTime ) {
+		if ( lastMoved && now - lastMoved > COOP_HITCH_MS ) {
+			Com_Printf( "COOP: time stood %d ms waiting for the host\n", now - lastMoved );
+		}
+		lastTime = target;
+		lastMoved = now;
 	}
 	sv.timeResidual = target > sv.time ? target - sv.time : 0;	// ahead of the host: wait
 	sv.timeResidualFraction = 0;

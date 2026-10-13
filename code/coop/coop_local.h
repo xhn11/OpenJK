@@ -10,6 +10,7 @@
 #define COOP_CONNECT_RESEND_MS		1000
 #define COOP_CONNECT_TIMEOUT_MS		15000
 #define COOP_PACKET_INTERVAL_MS		33
+#define COOP_HITCH_MS				150			// a frame longer than this is logged (stutter reports)
 #define COOP_MIN_TIMEOUT_SEC		5
 #define COOP_LOAD_TIMEOUT_MS		120000		// link timeout while either side loads a map (SV_SpawnServer + cgame media)
 // MSG_ReadString stops at MAX_STRING_CHARS-1 chars without consuming the NUL, so 1022 is the longest string that round-trips

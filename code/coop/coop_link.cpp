@@ -545,6 +545,11 @@ void Coop_Frame( void ) {
 	NET_IP_SetSimulation( coop_simLoss->integer, coop_simLatency->integer );
 	NET_IP_FlushSimulated();
 	const int now = Sys_Milliseconds();
+	static int lastFrame;
+	if ( coop.state == COOP_LINK_ACTIVE && lastFrame && now - lastFrame > COOP_HITCH_MS && !coop.localLoading ) {
+		Com_Printf( "COOP: hitch, a frame took %d ms\n", now - lastFrame );	// stutter reports: this machine stood still
+	}
+	lastFrame = now;
 	Coop_FindFrame( now );
 	if ( coop.localLoading && Coop_LocalMapReady() ) {
 		coop.localLoading = qfalse;

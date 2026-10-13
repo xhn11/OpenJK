@@ -2261,6 +2261,18 @@ coop (design 27): the partner's name, health and shield in the corner, the name 
 it is in view, an optional arrow towards it (cg_coopPartnerArrow) when it is not
 =================
 */
+// registered once: every Cvar_Get with CVAR_ARCHIVE marks the config for writing, and that write
+// took 0.2-1 s per frame (the coop stutters)
+static cvar_t *CG_CoopPartnerArrow( void )
+{
+	static cvar_t *arrow;
+	if ( !arrow )
+	{
+		arrow = gi.cvar( "cg_coopPartnerArrow", "0", CVAR_ARCHIVE );
+	}
+	return arrow;
+}
+
 static void CG_DrawCoopPartner( void )
 {
 	const gentity_t *partner = &g_entities[1];
@@ -2291,7 +2303,7 @@ static void CG_DrawCoopPartner( void )
 		const int w = cgi_R_Font_StrLenPixels( name, cgs.media.qhFontSmall, 0.8f );
 		cgi_R_Font_DrawString( x - w / 2, y - 12, name, colorTable[CT_LTGOLD1], cgs.media.qhFontSmall, -1, 0.8f );
 	}
-	else if ( gi.cvar( "cg_coopPartnerArrow", "0", CVAR_ARCHIVE )->integer )
+	else if ( CG_CoopPartnerArrow()->integer )
 	{
 		vec3_t dir, angles;
 		VectorSubtract( partner->currentOrigin, cg.refdef.vieworg, dir );
