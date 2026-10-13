@@ -1,7 +1,8 @@
 param(
   [string]$Map = "kejim_post",
   [string[]]$HostArgs = @(),
-  [string[]]$GuestArgs = @()
+  [string[]]$GuestArgs = @(),
+  [switch]$NoSound	# obe hry bez zvuku
 )
 $ErrorActionPreference = "Stop"
 . "$PSScriptRoot\layout.ps1"
@@ -10,10 +11,11 @@ $bin     = Join-Path $root "install\JediOutcast"
 $exe     = Join-Path $bin "openjo_sp.x86_64.exe"
 $base    = if ($env:JK2_GAMEDATA) { $env:JK2_GAMEDATA } else { "D:\GOG Galaxy\Games\Star Wars Jedi Knight II - Jedi Outcast\GameData" }
 $homeDir = Join-Path $root "build\coop-play"                       # zůstává mezi spuštěními (configy, savy)
+$sound   = if ($NoSound) { "0" } else { "1" }                      # vzdy explicitne: s_initsound se uklada do configu
 New-Item -ItemType Directory -Force "$homeDir\host", "$homeDir\guest" | Out-Null
 
 function Start-Instance([string]$name, [int]$slot, [string[]]$extra) {
-  $argLine = "+set fs_basepath `"$base`" +set fs_cdpath `"$bin`" +set fs_homepath `"$homeDir\$name`" +set logfile 2 " + (Get-WindowArgs $slot) + " " + ($extra -join " ")
+  $argLine = "+set fs_basepath `"$base`" +set fs_cdpath `"$bin`" +set fs_homepath `"$homeDir\$name`" +set logfile 2 +set s_initsound $sound " + (Get-WindowArgs $slot) + " " + ($extra -join " ")
   Start-Process -FilePath $exe -ArgumentList $argLine -WorkingDirectory $bin -PassThru
 }
 
