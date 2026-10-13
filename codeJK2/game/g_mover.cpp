@@ -61,7 +61,6 @@ typedef struct {
 	float	deltayaw;
 } pushed_t;
 pushed_t	pushed[MAX_GENTITIES], *pushed_p;
-static qboolean	g_coopReplicaPush = qfalse;	// G_CoopRunReplicaMover: push only entities this machine owns
 
 
 /*
@@ -340,8 +339,9 @@ qboolean G_MoverPush( gentity_t *pusher, vec3_t move, vec3_t amove, gentity_t **
 	// see if any solid entities are inside the final position
 	for ( e = 0 ; e < listedEntities ; e++ ) {
 		check = entityList[ e ];
-		if ( g_coopReplicaPush && !G_CoopOwnsEnt( check ) )
-		{//coop guest replaying a host mover: only our own player and entities get pushed, replicas follow the host
+		if ( g_coopMode != COOP_MODE_SOLO && !G_CoopOwnsEnt( check ) )
+		{//coop: a mover pushes and crushes only what this machine runs - the partner's player and NPCs
+		 //ride and get crushed on the partner's machine, which replays the mover (design 4)
 			continue;
 		}
 
@@ -605,9 +605,7 @@ void G_CoopRunReplicaMover( gentity_t *ent ) {
 		VectorSubtract( origin, part->currentOrigin, move );
 		VectorSubtract( angles, part->currentAngles, amove );
 		pushed_p = pushed;
-		g_coopReplicaPush = qtrue;
 		G_MoverPush( part, move, amove, &obstacle );	// moves part even when blocked
-		g_coopReplicaPush = qfalse;
 	}
 }
 
