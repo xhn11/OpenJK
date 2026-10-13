@@ -285,6 +285,8 @@ static void G_CoopStandInFrame( void ) {
 		ent->contents = 0;
 		ent->flags |= FL_NOTARGET;
 		ent->svFlags |= SVF_IGNORE_ENEMIES;
+		ent->NPC->scriptFlags |= SCF_DONT_FIRE;		// an invisible ally must not start fights (its targets turn on Kyle)
+		ent->NPC->confusionTime = level.time + 500;	// and picks no enemies at all (G_SetEnemy, NPC_FindEnemy)
 		if ( ent->enemy ) {
 			G_ClearEnemy( ent );
 		}
@@ -295,6 +297,7 @@ static void G_CoopStandInFrame( void ) {
 		ent->contents = g_coopStandInContents;
 		ent->flags &= ~FL_NOTARGET;
 		ent->svFlags &= ~SVF_IGNORE_ENEMIES;
+		ent->NPC->scriptFlags &= ~SCF_DONT_FIRE;
 	}
 }
 

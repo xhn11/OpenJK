@@ -38,7 +38,8 @@ static qboolean G_CoopOurCause( const gentity_t *ent ) {
 
 void G_CoopForwardDamage( gentity_t *targ, gentity_t *inflictor, gentity_t *attacker, const vec3_t dir,
 	const vec3_t point, int damage, int dflags, int mod, int hitLoc ) {
-	if ( !targ->takedamage || !G_CoopOurCause( attacker ) || !G_CoopOurCause( inflictor ) ) {
+	// no takedamage check: a replica never has it set here, the owner's G_Damage decides
+	if ( !G_CoopOurCause( attacker ) || !G_CoopOurCause( inflictor ) ) {
 		return;
 	}
 	vec3_t d, p;

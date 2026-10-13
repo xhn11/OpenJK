@@ -341,6 +341,20 @@ void G_CoopNpcFrame( void ) {
 		return;
 	}
 	g_coopHadPartner = qtrue;
+	static int lastEnemy[MAX_GENTITIES];
+	static cvar_t *coop_debug;
+	if ( !coop_debug ) {
+		coop_debug = gi.cvar( "coop_debug", "0", 0 );
+	}
+	for ( int i = MAX_CLIENTS; coop_debug->integer && i < globals.num_entities; i++ ) {	// logging: who goes after whom
+		const gentity_t *ent = &g_entities[i];
+		const int e = ( ent->inuse && ent->NPC && ent->enemy ) ? ent->enemy->s.number : -1;
+		if ( e != lastEnemy[i] && ent->inuse && ent->NPC ) {
+			gi.Printf( "COOP: npc %d (%s) enemy %d -> %d, run by %s\n", i, ent->NPC_type, lastEnemy[i], e,
+				G_CoopOwner( ent ) == COOP_MODE_HOST ? "host" : "guest" );
+		}
+		lastEnemy[i] = e;
+	}
 	if ( level.time < g_coopNextDecide ) {
 		return;
 	}

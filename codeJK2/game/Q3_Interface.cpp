@@ -2199,6 +2199,10 @@ static void Q3_SetEnemy( int entID, const char *name )
 		}*/
 		else
 		{
+			if ( enemy == &g_entities[0] && ent->NPC && G_PlayerNum( 1 ) )
+			{//coop: "attack kyle" means the closer living player (design 6, M7)
+				enemy = G_ClosestPlayer( ent->currentOrigin, qtrue );
+			}
 			if(ent->NPC)
 			{
 				G_SetEnemy( ent, enemy );
