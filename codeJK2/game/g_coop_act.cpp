@@ -408,14 +408,18 @@ void G_Coop_GameCommand( void ) {
 
 // ---------------------------------------------------------------- testing
 
-// console: coop_hurt <entity> <damage> - our player damages an entity (a partner's one goes as a hit)
+// console: coop_hurt <entity> <damage> [hitloc] - our player damages an entity (a partner's one goes as a hit);
+// damage 0: just over half its health, so only a head hit (hitloc 16, x2) kills
 void G_CoopHurt_f( void ) {
 	gentity_t *targ = G_CoopLocalEnt( gi.argv( 1 ), qfalse );
-	if ( gi.argc() != 3 || !targ ) {
-		gi.Printf( "usage: coop_hurt <entity> <damage>\n" );
+	if ( ( gi.argc() != 3 && gi.argc() != 4 ) || !targ ) {
+		gi.Printf( "usage: coop_hurt <entity> <damage, 0: half its health + 1> [hitloc]\n" );
 		return;
 	}
-	G_Damage( targ, &g_entities[0], &g_entities[0], NULL, NULL, atoi( gi.argv( 2 ) ), DAMAGE_NO_KNOCKBACK, MOD_UNKNOWN, HL_NONE );
+	const int damage = atoi( gi.argv( 2 ) ) > 0 ? atoi( gi.argv( 2 ) ) : targ->health / 2 + 1;
+	const int hitLoc = gi.argc() == 4 ? atoi( gi.argv( 3 ) ) : HL_NONE;
+	gi.Printf( "COOP: hurting %d (health %d) for %d at hitloc %d\n", targ->s.number, targ->health, damage, hitLoc );
+	G_Damage( targ, &g_entities[0], &g_entities[0], NULL, NULL, damage, DAMAGE_NO_KNOCKBACK, hitLoc == HL_NONE ? MOD_UNKNOWN : MOD_BLASTER, hitLoc );
 }
 
 // console: coop_use <entity> - our player uses an entity (a host one from the guest goes to the host)

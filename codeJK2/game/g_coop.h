@@ -63,7 +63,7 @@ void		G_CoopForwardAlert( int type, const gentity_t *owner, const vec3_t pos, fl
 void		G_CoopRunPuppet( gentity_t *ent );						// G_RunFrame, entity 1
 void		G_CoopUnstickBegin( gentity_t *ent );					// ClientThink_real around Pmove: partner bodies we are inside are not solid
 void		G_CoopUnstickEnd( void );
-void		G_CoopHurt_f( void );									// console: coop_hurt <entity> <damage>
+void		G_CoopHurt_f( void );									// console: coop_hurt <entity> <damage> [hitloc]
 void		G_CoopUse_f( void );									// console: coop_use <entity>
 // NPC authority migration (g_coop_npc.cpp, design 6, 9)
 void		G_CoopNpcInit( void );
