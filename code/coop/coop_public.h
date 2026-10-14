@@ -20,6 +20,7 @@ void		Coop_ForwardServerCommand( int clientNum, const char *cmd );	// SV_GameSen
 qboolean	Coop_PeerViewOrigin( vec3_t org );				// SV_BuildClientSnapshot: the partner's eyes (design 8)
 void		Coop_SendGameCommand( const char *text );		// game import: reliable "g <text>" to the partner's game
 int			Coop_PartnerInWorld( void );					// game import: the partner plays in our map
+int			Coop_WorldSynced( void );						// game import: a complete partner snapshot was applied in this map
 void		Coop_NoteTransition( const char *spawnTarget );		// SV_MapTransition_f: the next map is a level change
 qboolean	Coop_GuestSaveRequest( const char *name );		// SV_SaveGame_f: qtrue = the guest asked the host instead
 qboolean	Coop_GuestLoadBlocked( void );					// SV_LoadGame_f: qtrue = the guest may not load

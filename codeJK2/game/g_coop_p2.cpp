@@ -24,6 +24,7 @@ static int			g_coopStandIn = -1;			// the stand-in (bottom of this file)
 static int			g_coopStandInContents;
 static qboolean		g_coopStandInHidden;
 static qboolean		g_coopStandInGod;
+static int			g_coopStandInScanTime;		// a cutscene actor stands in: look for the companion once a frame
 
 const char *G_CoopP2Name( void ) {
 	return g_coopP2Char == COOP_P2_LUKE ? "luke" : "jan";
@@ -42,22 +43,47 @@ void G_CoopP2Init( void ) {
 	g_coopStandIn = -1;
 	g_coopStandInHidden = qfalse;
 	g_coopStandInGod = qfalse;
+	g_coopStandInScanTime = -1;
 }
 
 // ---------------------------------------------------------------- placing player 2 next to Kyle
 
-static qboolean G_CoopSpotFree( gentity_t *ent, const vec3_t from, const vec3_t spot ) {
+static qboolean G_CoopSpotFree( gentity_t *ent, const vec3_t from, int inside, const vec3_t spot ) {
 	trace_t tr;
-	// from is inside the partner (entity 1): its body must not block the way out; ours is unlinked
-	gi.trace( &tr, from, ent->mins, ent->maxs, spot, 1, MASK_PLAYERSOLID, G2_NOCOLLIDE, 0 );
+	if ( ent->s.number == 0 && G_CoopNearDanger( spot ) ) {
+		return qfalse;		// the world hurt us here lately (a fire lane, an explosion)
+	}
+	// from is inside the body standing at it (inside): that body must not block the way out; ours is unlinked
+	gi.trace( &tr, from, ent->mins, ent->maxs, spot, inside, MASK_PLAYERSOLID, G2_NOCOLLIDE, 0 );
 	if ( tr.startsolid || tr.allsolid || tr.fraction < 1.0f ) {
 		return qfalse;
 	}
 	vec3_t down;
 	VectorCopy( spot, down );
 	down[2] -= 128;
-	gi.trace( &tr, spot, ent->mins, ent->maxs, down, ent->s.number, MASK_PLAYERSOLID, G2_NOCOLLIDE, 0 );
-	return (qboolean)( !tr.startsolid && tr.fraction < 1.0f );		// ground below, not a pit
+	// lava and slime stop the trace too: a shallow pool's floor is no ground
+	gi.trace( &tr, spot, ent->mins, ent->maxs, down, ent->s.number, MASK_PLAYERSOLID | CONTENTS_LAVA | CONTENTS_SLIME, G2_NOCOLLIDE, 0 );
+	if ( tr.startsolid || tr.fraction >= 1.0f ) {
+		return qfalse;		// no ground below, a pit
+	}
+	if ( ( tr.contents & ( CONTENTS_LAVA | CONTENTS_SLIME ) )
+		|| ( gi.pointcontents( tr.endpos, ent->s.number ) & ( CONTENTS_LAVA | CONTENTS_SLIME ) ) ) {
+		return qfalse;
+	}
+	// where we land, not inside a hazard that hurts a player and is on (an off trigger_hurt is unlinked or inactive)
+	vec3_t mins, maxs;
+	VectorAdd( tr.endpos, ent->mins, mins );
+	VectorAdd( tr.endpos, ent->maxs, maxs );
+	gentity_t *touch[MAX_GENTITIES];
+	const int num = gi.EntitiesInBox( mins, maxs, touch, MAX_GENTITIES );
+	for ( int i = 0; i < num; i++ ) {
+		const gentity_t *hurt = touch[i];
+		if ( hurt->classname && !Q_stricmp( hurt->classname, "trigger_hurt" ) && !( hurt->svFlags & SVF_INACTIVE )
+			&& hurt->damage > 0 && !( hurt->NPC_targetname && hurt->NPC_targetname[0] ) ) {	// hurt_touch
+			return qfalse;
+		}
+	}
+	return qtrue;
 }
 
 // a free spot near org, qfalse when there is none
@@ -68,12 +94,22 @@ qboolean G_CoopFindSpotNear( gentity_t *ent, const vec3_t org, vec3_t out ) {
 	from[2] += 8;
 	const qboolean linked = ent->linked;
 	gi.unlinkentity( ent );
+	// the partner (entity 1) stands at org, or after a cutscene the stand-in, solid on the guest
+	int inside = 1;
+	gentity_t *touch[MAX_GENTITIES];
+	const int num = gi.EntitiesInBox( from, from, touch, MAX_GENTITIES );
+	for ( int i = 0; i < num; i++ ) {
+		if ( touch[i]->contents & CONTENTS_BODY ) {
+			inside = touch[i]->s.number;
+			break;
+		}
+	}
 	qboolean found = qfalse;
 	for ( size_t d = 0; d < ARRAY_LEN( dists ) && !found; d++ ) {
 		for ( int a = 0; a < 8; a++ ) {
 			const float yaw = DEG2RAD( a * 45.0f );
 			vec3_t spot = { from[0] + cosf( yaw ) * dists[d], from[1] + sinf( yaw ) * dists[d], from[2] };
-			if ( G_CoopSpotFree( ent, from, spot ) ) {
+			if ( G_CoopSpotFree( ent, from, inside, spot ) ) {
 				VectorCopy( spot, out );
 				found = qtrue;
 				break;
@@ -89,7 +125,11 @@ qboolean G_CoopFindSpotNear( gentity_t *ent, const vec3_t org, vec3_t out ) {
 // TeleportPlayer without G_KillBox: never telefrag the partner standing at org
 void G_CoopTeleportNear( gentity_t *ent, const vec3_t org ) {
 	vec3_t spot;
-	if ( !ent->client || !G_CoopFindSpotNear( ent, org, spot ) ) {
+	if ( !ent->client ) {
+		return;
+	}
+	if ( !G_CoopFindSpotNear( ent, org, spot ) ) {
+		gi.Printf( "COOP: no free spot next to (%.0f %.0f %.0f), staying here\n", org[0], org[1], org[2] );
 		return;
 	}
 	gi.unlinkentity( ent );
@@ -194,8 +234,49 @@ void G_CoopP2Command( const char *name ) {
 	}
 }
 
-// host, every frame: decide the character once Kyle is in, tell the guest, keep Luke's Force in step
+// guest: our Jan / Luke is built before the host's configstrings arrive, and the sync can overwrite its
+// skin slot (CS_CHARSKINS) with one of the host's skins, which cgame then puts on our model every frame
+static void G_CoopP2KeepSkin( void ) {
+	gentity_t *ent = &g_entities[0];
+	if ( g_coopP2Char == COOP_P2_NONE || !ent->inuse || !ent->client || !ent->NPC_type
+		|| ent->playerModel < 0 || ent->playerModel >= ent->ghoul2.size() || ent->ghoul2[ent->playerModel].mCustomSkin <= 0 ) {
+		return;
+	}
+	CGhoul2Info *g2 = &ent->ghoul2[ent->playerModel];
+	char name[MAX_QPATH], slot[MAX_QPATH];
+	Com_sprintf( name, sizeof( name ), "models/players/%s/model_default.skin", ent->NPC_type );
+	gi.GetConfigstring( CS_CHARSKINS + g2->mCustomSkin, slot, sizeof( slot ) );
+	if ( !Q_stricmp( slot, name ) ) {
+		return;
+	}
+	const int skin = gi.RE_RegisterSkin( name );
+	if ( !skin ) {
+		return;
+	}
+	const int index = G_SkinIndex( name );
+	gi.Printf( "COOP: our skin slot %d became \"%s\", %s is slot %d now\n", g2->mCustomSkin, slot, name, index );
+	gi.G2API_SetSkin( g2, index, skin );
+}
+
+// host: tell the guest who it plays, before anything that depends on it (p2restore: Jan gets no saber);
+// qfalse while that is not decided yet
+qboolean G_CoopP2SendChar( void ) {
+	if ( g_coopP2Char == COOP_P2_NONE ) {
+		return qfalse;
+	}
+	if ( !g_coopP2Sent ) {
+		g_coopP2Sent = qtrue;
+		G_CoopSend( "p2char %s", G_CoopP2Name() );
+	}
+	return qtrue;
+}
+
+// host, every frame: decide the character once Kyle is in, tell the guest, keep Luke's Force in step (guest: our skin)
 void G_CoopP2Frame( void ) {
+	if ( g_coopMode == COOP_MODE_GUEST ) {
+		G_CoopP2KeepSkin();
+		return;
+	}
 	if ( g_coopMode != COOP_MODE_HOST ) {
 		return;
 	}
@@ -204,6 +285,9 @@ void G_CoopP2Frame( void ) {
 		return;
 	}
 	if ( g_coopP2Char == COOP_P2_NONE ) {
+		if ( !( kyle->client->ps.stats[STAT_WEAPONS] & ( 1 << WP_NONE ) ) ) {
+			return;		// a loaded save gives Kyle his weapons only in ClientSpawn, a spawned player always has WP_NONE
+		}
 		g_coopP2Char = ( kyle->client->ps.stats[STAT_WEAPONS] & ( 1 << WP_SABER ) ) ? COOP_P2_LUKE : COOP_P2_JAN;
 	}
 	if ( !G_CoopPartnerInWorld() ) {
@@ -211,10 +295,7 @@ void G_CoopP2Frame( void ) {
 		memset( g_coopP2ForceSent, -1, sizeof( g_coopP2ForceSent ) );
 		return;
 	}
-	if ( !g_coopP2Sent ) {
-		g_coopP2Sent = qtrue;
-		G_CoopSend( "p2char %s", G_CoopP2Name() );
-	}
+	G_CoopP2SendChar();
 	if ( g_coopP2Char != COOP_P2_LUKE || level.time < g_coopP2NextForceCheck ) {
 		return;
 	}
@@ -246,28 +327,90 @@ void G_CoopP2Frame( void ) {
 extern bool		in_camera;
 
 
+// the gameplay companion that affect("jan") / affect("luke") and NPC_targetname "jan" mean, not a cinematicNN_* actor
+static qboolean G_CoopStandInNamed( const gentity_t *ent ) {
+	return (qboolean)( ent->script_targetname && !Q_stricmp( ent->script_targetname, G_CoopP2Name() ) );
+}
+
+// spawned and its spawnscript started (NPC_Begin ran): until then its contents and place are not its own yet
+static qboolean G_CoopStandInCandidate( const gentity_t *ent ) {
+	return (qboolean)( ent->inuse && ent->NPC && ent->client && ent->NPC_type && !Q_stricmp( ent->NPC_type, G_CoopP2Name() )
+		&& ent->e_ThinkFunc != thinkF_NPC_Begin );
+}
+
+// the stand-in plays by the SP rules again: shown, solid, fights
+static void G_CoopStandInShow( gentity_t *ent ) {
+	g_coopStandInHidden = qfalse;
+	ent->s.eFlags &= ~EF_NODRAW;
+	ent->client->ps.eFlags &= ~EF_NODRAW;
+	ent->contents = g_coopStandInContents;
+	ent->flags &= ~FL_NOTARGET;
+	ent->svFlags &= ~SVF_IGNORE_ENEMIES;
+	ent->NPC->scriptFlags &= ~SCF_DONT_FIRE;
+}
+
 gentity_t *G_CoopStandIn( void ) {
+	gentity_t *cur = NULL;
 	if ( g_coopStandIn >= 0 ) {
 		gentity_t *ent = &g_entities[g_coopStandIn];
 		if ( ent->inuse && ent->NPC && ent->NPC_type && !Q_stricmp( ent->NPC_type, G_CoopP2Name() ) ) {
-			return ent;
+			if ( G_CoopStandInNamed( ent ) ) {
+				return ent;
+			}
+			cur = ent;		// a cutscene actor: the companion takes over as soon as it is there (cairn_bay: luke)
+		} else {
+			g_coopStandIn = -1;
 		}
-		g_coopStandIn = -1;
 	}
-	if ( g_coopP2Char == COOP_P2_NONE ) {
-		return NULL;
+	if ( g_coopP2Char == COOP_P2_NONE || ( cur && g_coopStandInScanTime == level.time ) ) {
+		return cur;
 	}
+	g_coopStandInScanTime = level.time;
+	gentity_t *pick = NULL;
 	for ( int i = MAX_CLIENTS; i < globals.num_entities; i++ ) {
 		gentity_t *ent = &g_entities[i];
-		if ( ent->inuse && ent->NPC && ent->client && ent->NPC_type && !Q_stricmp( ent->NPC_type, G_CoopP2Name() ) ) {
-			g_coopStandIn = i;
-			g_coopStandInContents = ent->contents;
-			g_coopStandInHidden = qfalse;
-			gi.Printf( "COOP: %s (%d) stands in for player 2\n", ent->NPC_type, i );
-			return ent;
+		if ( !G_CoopStandInCandidate( ent ) ) {
+			continue;
+		}
+		if ( G_CoopStandInNamed( ent ) ) {
+			pick = ent;
+			break;
+		}
+		if ( !pick && !cur ) {
+			pick = ent;
 		}
 	}
-	return NULL;
+	if ( !pick || pick == cur ) {
+		return cur;
+	}
+	if ( cur ) {
+		if ( g_coopStandInHidden ) {
+			G_CoopStandInShow( cur );
+		}
+		if ( g_coopStandInGod ) {
+			cur->flags &= ~FL_GODMODE;
+			g_coopStandInGod = qfalse;
+		}
+		gi.Printf( "COOP: %s (%d) no longer stands in for player 2\n", cur->targetname ? cur->targetname : cur->NPC_type, cur->s.number );
+	}
+	g_coopStandIn = pick->s.number;
+	g_coopStandInContents = pick->contents;
+	g_coopStandInHidden = qfalse;
+	gi.Printf( "COOP: %s (%d, %s) stands in for player 2\n", pick->NPC_type, pick->s.number, pick->targetname ? pick->targetname : "-" );
+	return pick;
+}
+
+// host: the hidden stand-in when a trigger waits for it (NPC_targetname "jan"), else NULL. In SP the
+// companion followed Kyle, so a player walking in was enough (kejim_post: join_jan opens the monitor room)
+gentity_t *G_CoopHiddenStandIn( const char *npcTargetname ) {
+	if ( g_coopMode != COOP_MODE_HOST || !npcTargetname || !npcTargetname[0] ) {
+		return NULL;
+	}
+	gentity_t *ent = G_CoopStandIn();
+	if ( !ent || !g_coopStandInHidden || !ent->script_targetname || Q_stricmp( ent->script_targetname, npcTargetname ) ) {
+		return NULL;
+	}
+	return ent;
 }
 
 // a script sends the hidden stand-in somewhere (kejim_post: Jan into the lift, its NPC trigger starts
@@ -282,7 +425,8 @@ static void G_CoopStandInToGoal( gentity_t *ent, const vec3_t goal ) {
 			return;
 		}
 		VectorSet( start, goal[0], goal[1], goal[2] + ups[i] - ent->mins[2] );
-		gi.trace( &tr, start, ent->mins, ent->maxs, end, ent->s.number, MASK_NPCSOLID, G2_NOCOLLIDE, 0 );
+		// bodies do not count: it is not solid, and a player on the navgoal would leave it standing on his head
+		gi.trace( &tr, start, ent->mins, ent->maxs, end, ent->s.number, MASK_NPCSOLID & ~CONTENTS_BODY, G2_NOCOLLIDE, 0 );
 		if ( !tr.startsolid && !tr.allsolid && tr.fraction < 1.0f ) {
 			break;
 		}
@@ -333,22 +477,17 @@ static void G_CoopStandInFrame( void ) {
 		}
 		if ( ent->NPC->goalEntity && Q3_TaskIDPending( ent, TID_MOVE_NAV ) ) {
 			G_CoopStandInToGoal( ent, ent->NPC->goalEntity->currentOrigin );
-		} else if ( p2 && !busy ) {
+		} else if ( p2 && !busy && G_CoopStandInNamed( ent ) ) {
 			// player 2 is this character: it stands where player 2 is, so a script that takes it
-			// (kejim_post: Jan shoots the big door) starts there, not where Kyle left it
+			// (kejim_post: Jan shoots the big door) starts there, not where Kyle left it. Cutscene actors
+			// stay where the map put them (cairn_bay: cinematic24_luke must walk to its mark from there)
 			G_SetOrigin( ent, p2->currentOrigin );
 			VectorCopy( p2->currentOrigin, ent->client->ps.origin );
 			VectorClear( ent->client->ps.velocity );
 			gi.linkentity( ent );
 		}
 	} else if ( g_coopStandInHidden ) {
-		g_coopStandInHidden = qfalse;
-		ent->s.eFlags &= ~EF_NODRAW;
-		ent->client->ps.eFlags &= ~EF_NODRAW;
-		ent->contents = g_coopStandInContents;
-		ent->flags &= ~FL_NOTARGET;
-		ent->svFlags &= ~SVF_IGNORE_ENEMIES;
-		ent->NPC->scriptFlags &= ~SCF_DONT_FIRE;
+		G_CoopStandInShow( ent );
 	}
 }
 

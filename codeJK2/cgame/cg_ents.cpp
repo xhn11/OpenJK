@@ -1943,6 +1943,9 @@ qboolean	MatrixMode = qfalse;
 void CG_MatrixEffect ( centity_t *cent )
 {
 	float	MATRIX_EFFECT_TIME = 1000.0f;
+	// coop: both machines share one clock (the host's), a slow-mo would slow the partner too and
+	// make its world stop and go - only the camera spins, the timescale stays
+	const qboolean slowMo = (qboolean)( g_coopMode == COOP_MODE_SOLO );
 	//VectorCopy( cent->lerpOrigin, cg.refdef.vieworg );
 	float totalElapsedTime = (float)(cg.time - cent->currentState.time);
 	float elapsedTime = totalElapsedTime;
@@ -1955,7 +1958,10 @@ void CG_MatrixEffect ( centity_t *cent )
 		cg.overrides.thirdPersonAngle = 0;
 		cg.overrides.thirdPersonPitchOffset = 0;
 		cg.overrides.thirdPersonRange = 0;
-		cgi_Cvar_Set( "timescale", "1.0" );
+		if ( slowMo )
+		{
+			cgi_Cvar_Set( "timescale", "1.0" );
+		}
 		MatrixMode = qfalse;
 		cent->gent->e_clThinkFunc = clThinkF_NULL;
 		return;
@@ -1986,7 +1992,10 @@ void CG_MatrixEffect ( centity_t *cent )
 		{
 			timescale = 0.01f;
 		}
-		cgi_Cvar_Set( "timescale", va("%4.2f",timescale) );
+		if ( slowMo )
+		{
+			cgi_Cvar_Set( "timescale", va("%4.2f",timescale) );
+		}
 
 		//pitch
 		//dip - FIXME: use pitchOffet?
@@ -2024,7 +2033,10 @@ void CG_MatrixEffect ( centity_t *cent )
 	else
 	{//FIXME: if they're on the ground, stop spinning and stop timescale
 		//FIXME: if they go to the menu, restore timescale
-		cgi_Cvar_Set( "timescale", "0.25f" );
+		if ( slowMo )
+		{
+			cgi_Cvar_Set( "timescale", "0.25f" );
+		}
 	}
 }
 

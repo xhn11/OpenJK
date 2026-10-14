@@ -196,6 +196,10 @@ void Touch_Multi( gentity_t *self, gentity_t *other, trace_t *trace )
 			return;
 		}
 	}
+	else if ( G_IsPlayer( other ) && G_CoopHiddenStandIn( self->NPC_targetname ) )
+	{//coop: player 2 plays the invisible companion; as in SP, where it followed Kyle, either player sets off its trigger
+		other = G_CoopHiddenStandIn( self->NPC_targetname );
+	}
 	else
 	{
 		if ( self->spawnflags & 16 )

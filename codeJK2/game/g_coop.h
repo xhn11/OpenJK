@@ -98,6 +98,7 @@ void		G_CoopP2Frame( void );									// G_RunFrame (host): decide, tell the gues
 void		G_CoopP2Command( const char *name );
 const char	*G_CoopP2Name( void );									// "jan" / "luke"
 qboolean	G_CoopP2HasForce( void );
+qboolean	G_CoopP2SendChar( void );								// host: p2char now, qfalse while undecided
 void		G_CoopP2Restrict( gentity_t *ent );						// guest as Jan: no saber, no Force
 qboolean	G_CoopFindSpotNear( gentity_t *ent, const vec3_t org, vec3_t out );
 void		G_CoopTeleportNear( gentity_t *ent, const vec3_t org );	// next to org, never telefragging
@@ -114,11 +115,15 @@ void		G_CoopLifeFrame( void );								// G_RunFrame
 void		G_CoopLifeCommand( const char *name );
 qboolean	G_CoopRespawnThink( gentity_t *ent );					// ClientThink, dead: qtrue = coop handles it
 qboolean	G_CoopPartnerAlive( void );							// our death waits for a respawn, not a reload
+qboolean	G_CoopRespawnShield( const gentity_t *targ, int dflags, int mod );	// G_Damage: our just revived player is not hurt yet
+void		G_CoopNoteDanger( const gentity_t *targ, const gentity_t *inflictor, const gentity_t *attacker, int mod );	// G_Damage: the world hurt our player here
+qboolean	G_CoopNearDanger( const vec3_t spot );					// placing our player: the world hurt it near spot lately
 void		G_CoopSkipLevel_f( void );								// console: coop_skiplevel
 qboolean	G_CoopSaveEnt( const gentity_t *ent );					// WriteGEntities: ours, and the guest's NPCs
 qboolean	G_CoopNoFriendlyFire( const gentity_t *targ, const gentity_t *attacker );	// G_Damage: players never hurt each other
 void		G_CoopAlliesFollow( void );								// G_RunFrame (host): allies follow player 2 while Kyle is down
 gentity_t	*G_CoopStandIn( void );									// host: the NPC of player 2's character, NULL if none
+gentity_t	*G_CoopHiddenStandIn( const char *npcTargetname );		// Touch_Multi (host): a player sets off the hidden companion's trigger
 void		G_CoopStandInRunFrame( void );							// G_RunFrame: hide / show the stand-in, the guest in cutscenes
 // guns, turrets, cameras owned by who uses them (g_coop_act.cpp, design 26)
 void		G_CoopClaimInit( void );
@@ -126,6 +131,8 @@ void		G_CoopClaimFrame( void );
 qboolean	G_CoopClaimUse( gentity_t *self, gentity_t *activator );	// GEntity_UseFunc (host): qtrue = handled
 qboolean	G_CoopClaimKeep( gentity_t *ent );
 qboolean	G_CoopForwardMindTrick( gentity_t *self, gentity_t *target );	// ForceTelepathy: qtrue = the owner applies it
+void		G_CoopTriggerInit( void );								// G_CoopInitGame: no trigger states from the previous map
+void		G_CoopTriggerRecordSpawn( void );						// InitGame, after G_SpawnEntitiesFromString (host): the map's triggers
 void		G_CoopTriggerFrame( void );								// G_RunFrame (host): physical triggers on/off to the guest
 void		G_CoopCenterPrint( const char *text );					// local only: coop messages (Czech, no diacritics: the fonts lack them)
 void		G_CoopNpcInfo_f( void );								// console: coop_npcinfo

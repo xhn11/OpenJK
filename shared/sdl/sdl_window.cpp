@@ -430,7 +430,8 @@ static rserr_t GLimp_SetMode(glconfig_t *glConfig, const windowDesc_t *windowDes
 	if( fullscreen )
 	{
 #ifdef MACOS_X
-        flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
+        // desktop fullscreen ignores the mode size; render at the display's real (Retina) pixels
+        flags |= SDL_WINDOW_FULLSCREEN_DESKTOP | SDL_WINDOW_ALLOW_HIGHDPI;
 #else
         flags |= SDL_WINDOW_FULLSCREEN;
 #endif
@@ -623,6 +624,21 @@ static rserr_t GLimp_SetMode(glconfig_t *glConfig, const windowDesc_t *windowDes
 			{
 				Com_DPrintf( "SDL_GL_SetSwapInterval failed: %s\n", SDL_GetError() );
 			}
+
+#ifdef MACOS_X
+			if ( fullscreen )
+			{
+				// the desktop fullscreen window has the display's size, not the requested mode's
+				int drawW, drawH;
+				SDL_GL_GetDrawableSize( screen, &drawW, &drawH );
+				if ( drawW > 0 && drawH > 0 )
+				{
+					glConfig->vidWidth = drawW;
+					glConfig->vidHeight = drawH;
+					Com_Printf( "Fullscreen drawable: %d x %d\n", drawW, drawH );
+				}
+			}
+#endif
 
 			glConfig->colorBits = testColorBits;
 			glConfig->depthBits = testDepthBits;

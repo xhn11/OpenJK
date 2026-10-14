@@ -1313,8 +1313,8 @@ void ClientEvents( gentity_t *ent, int oldEventSequence ) {
 	//by the way, if you have your saber in hand and it's on, do the damage trace
 	if ( client->ps.weapon == WP_SABER )
 	{
-		if ( g_timescale->value >= 1.0f || !(client->ps.forcePowersActive&(1<<FP_SPEED)) )
-		{
+		if ( (g_timescale->value >= 1.0f && WP_CoopSpeedScale( &client->ps ) >= 1.0f) || !(client->ps.forcePowersActive&(1<<FP_SPEED)) )
+		{//(coop: a Force Speed user's saber is traced per rendered frame in CG_Player, as in solo)
 			int wait = FRAMETIME/2;
 			//sanity check
 			if ( client->ps.saberDamageDebounceTime - level.time > wait )

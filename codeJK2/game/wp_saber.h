@@ -74,6 +74,7 @@ extern float forcePushPullRadius[];
 
 extern void ForceSpeed( gentity_t *self, int duration = 0 );
 extern float forceSpeedValue[];
+extern float WP_CoopSpeedScale( const playerState_t *ps );
 extern float forceSpeedRangeMod[];
 extern float forceSpeedFOVMod[];
 #define FORCE_SPEED_DURATION 10000.0f

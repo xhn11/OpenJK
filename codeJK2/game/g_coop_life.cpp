@@ -12,9 +12,16 @@ extern void		respawn( gentity_t *ent );
 extern void		G_SetG2PlayerModel( gentity_t * const ent, const char *modelName, const char *customSkin, const char *surfOff, const char *surfOn );
 extern void		target_level_change_use( gentity_t *self, gentity_t *other, gentity_t *activator );
 extern void		WP_SaberInitBladeData( gentity_t *ent );
+extern void		G_CreateG2AttachedWeaponModel( gentity_t *ent, const char *weaponModel );
+extern bool		in_camera;
 
 #define COOP_BOTH_DEAD_MS		3000
 #define COOP_P2STATE_MS			5000
+#define COOP_NEAR_RETRY_MS		5000
+#define COOP_RESPAWN_SHIELD_MS	3000	// a revived player stands up next to the partner, maybe in a fire lane
+#define COOP_DANGER_SPOTS		8
+#define COOP_DANGER_MS			45000	// a few respawn cycles (coop_respawnDelay 10 s and the death): two bad spots don't take turns
+#define COOP_DANGER_RADIUS		96.0f
 
 static cvar_t	*coop_respawnDelay;
 static int		g_coopDeathTime;		// level.time our player died, 0 alive
@@ -23,15 +30,39 @@ static int		g_coopLastCountdown;
 static int		g_coopNextP2State;
 static qboolean	g_coopNeedSent;
 static qboolean	g_coopArrived;
+static int		g_coopThrowKnown = -1;	// saber throw while alive (the bit, -1 unknown): dropping the saber at death grants it
+static int		g_coopThrowLevel;
+static qboolean	g_coopNearPending;		// guest: the host asked us to come next to Kyle
+static int		g_coopNearUntil;		// level.time the tries give up, 0 not started
+static qboolean	g_coopNeedPending;		// host: p2need waits for player 2's character (a loaded save gives Kyle his weapons late)
+static int		g_coopShieldUntil;		// level.time our revived player takes damage again
+static qboolean	g_coopCameWithState;	// guest: playersave was set at InitGame (the host's level change), before the map-start autosave fills it
+
+typedef struct {
+	vec3_t		org;
+	int			time;					// level.time of the last hit there
+	qboolean	used;
+} coopDanger_t;
+static coopDanger_t	g_coopDanger[COOP_DANGER_SPOTS];	// where the world hurt our player lately
+static int			g_coopDangerNext;
 
 void G_CoopLifeInit( void ) {
 	coop_respawnDelay = gi.cvar( "coop_respawnDelay", "10", CVAR_ARCHIVE );
 	g_coopDeathTime = 0;
+	g_coopShieldUntil = 0;
 	g_coopBothDeadTime = 0;
 	g_coopLastCountdown = -1;
 	g_coopNextP2State = 0;
 	g_coopNeedSent = qfalse;
+	g_coopNeedPending = qfalse;
 	g_coopArrived = qfalse;
+	g_coopThrowKnown = -1;
+	g_coopNearPending = qfalse;
+	memset( g_coopDanger, 0, sizeof( g_coopDanger ) );
+	g_coopDangerNext = 0;
+	char s[16];
+	gi.Cvar_VariableStringBuffer( "playersave", s, sizeof( s ) );
+	g_coopCameWithState = (qboolean)( s[0] != 0 );
 	// the host keeps the guest's last state (design 23); a fresh host starts without one
 	gi.cvar( "coop_p2save", "", 0 );
 	gi.cvar( "coop_p2ammo", "", 0 );
@@ -40,6 +71,51 @@ void G_CoopLifeInit( void ) {
 }
 
 // ---------------------------------------------------------------- respawn next to the partner (design 10)
+
+// G_Damage: our player was just revived, damage waits a moment (not what DAMAGE_NO_PROTECTION does: pits, kill;
+// not a crush either: a mover would stay blocked by us)
+qboolean G_CoopRespawnShield( const gentity_t *targ, int dflags, int mod ) {
+	return (qboolean)( targ->s.number == 0 && level.time < g_coopShieldUntil && !( dflags & DAMAGE_NO_PROTECTION ) && mod != MOD_CRUSH );
+}
+
+// G_Damage: the world hurt our player here (fire lanes, explosions, hurts, lava; not a character's shot,
+// a fall or a crush): placing us next to the partner keeps away from it for a while (yavin_final fireballs)
+static qboolean G_CoopDangerLive( const coopDanger_t *d ) {
+	return (qboolean)( d->used && d->time <= level.time && level.time - d->time < COOP_DANGER_MS );	// a load moves time back
+}
+
+static qboolean G_CoopIsCharacter( const gentity_t *ent ) {
+	return (qboolean)( ent && ( ent->client || ent->s.eType == ET_PLAYER ) );
+}
+
+void G_CoopNoteDanger( const gentity_t *targ, const gentity_t *inflictor, const gentity_t *attacker, int mod ) {
+	if ( g_coopMode == COOP_MODE_SOLO || targ->s.number != 0 || mod == MOD_FALLING || mod == MOD_CRUSH
+		|| G_CoopIsCharacter( attacker ) || G_CoopIsCharacter( inflictor ) ) {
+		return;
+	}
+	for ( int i = 0; i < COOP_DANGER_SPOTS; i++ ) {
+		coopDanger_t *d = &g_coopDanger[i];
+		if ( G_CoopDangerLive( d ) && DistanceSquared( d->org, targ->currentOrigin ) < COOP_DANGER_RADIUS * COOP_DANGER_RADIUS * 0.25f ) {
+			d->time = level.time;		// the same spot again (a burst is many hits): older spots stay known
+			return;
+		}
+	}
+	coopDanger_t *d = &g_coopDanger[g_coopDangerNext];
+	g_coopDangerNext = ( g_coopDangerNext + 1 ) % COOP_DANGER_SPOTS;
+	VectorCopy( targ->currentOrigin, d->org );
+	d->time = level.time;
+	d->used = qtrue;
+}
+
+qboolean G_CoopNearDanger( const vec3_t spot ) {
+	for ( int i = 0; i < COOP_DANGER_SPOTS; i++ ) {
+		const coopDanger_t *d = &g_coopDanger[i];
+		if ( G_CoopDangerLive( d ) && DistanceSquared( d->org, spot ) < COOP_DANGER_RADIUS * COOP_DANGER_RADIUS ) {
+			return qtrue;
+		}
+	}
+	return qfalse;
+}
 
 // the partner lives, so our death only waits for a respawn: no SP mission failed screen, scripts go on
 qboolean G_CoopPartnerAlive( void ) {
@@ -66,9 +142,34 @@ static void G_CoopRevive( gentity_t *ent, const vec3_t near ) {
 	ent->e_DieFunc = dieF_player_die;
 	VectorCopy( playerMins, ent->mins );
 	VectorCopy( playerMaxs, ent->maxs );
+	if ( cl->ps.stats[STAT_WEAPONS] & ( 1 << WP_SABER ) ) {
+		// the death dropped the saber or freed it (player_die): a new one in the hand, as ClientSpawn makes it
+		const int saberNum = cl->ps.saberEntityNum;
+		if ( saberNum > 0 && saberNum < ENTITYNUM_WORLD && g_entities[saberNum].inuse && g_entities[saberNum].owner == ent ) {
+			G_FreeEntity( &g_entities[saberNum] );
+		}
+		cl->ps.saberEntityNum = ENTITYNUM_NONE;
+		cl->ps.saberInFlight = qfalse;
+		cl->ps.saberActive = qfalse;
+		WP_SaberInitBladeData( ent );
+	}
+	if ( g_coopThrowKnown >= 0 ) {		// WP_SaberLose gave saber throw level 1
+		cl->ps.forcePowersKnown = ( cl->ps.forcePowersKnown & ~( 1 << FP_SABERTHROW ) ) | g_coopThrowKnown;
+		cl->ps.forcePowerLevel[FP_SABERTHROW] = g_coopThrowLevel;
+	}
+	if ( ent->weaponModel == -1 && cl->ps.weapon == WP_SABER && cl->ps.saberModel ) {
+		G_CreateG2AttachedWeaponModel( ent, cl->ps.saberModel );
+	} else if ( ent->weaponModel == -1 && cl->ps.weapon > WP_NONE && cl->ps.weapon < WP_NUM_WEAPONS && weaponData[cl->ps.weapon].weaponMdl[0] ) {
+		G_CreateG2AttachedWeaponModel( ent, weaponData[cl->ps.weapon].weaponMdl );
+	}
+	G_CoopP2Restrict( ent );
 	cl->ps.legsAnimTimer = cl->ps.torsoAnimTimer = 0;
 	NPC_SetAnim( ent, SETANIM_BOTH, BOTH_STAND2, SETANIM_FLAG_OVERRIDE );
+	if ( level.dmState == DM_DEATH ) {
+		level.dmState = DM_AUTO;	// host: SP never leaves the death music, a death always reloads (G_DynamicMusicUpdate)
+	}
 	G_CoopTeleportNear( ent, near );
+	g_coopShieldUntil = level.time + COOP_RESPAWN_SHIELD_MS;
 	G_CoopCenterPrint( "" );
 	gi.Printf( "COOP: respawned next to the partner\n" );
 }
@@ -108,8 +209,16 @@ qboolean G_CoopRespawnThink( gentity_t *ent ) {
 		}
 		return qtrue;
 	}
-	vec3_t spot;
-	if ( !G_CoopFindSpotNear( ent, partner->currentOrigin, spot ) ) {
+	// look with the standing box the revive gives us, not the corpse's (player_die lowers maxs)
+	vec3_t spot, deadMins, deadMaxs;
+	VectorCopy( ent->mins, deadMins );
+	VectorCopy( ent->maxs, deadMaxs );
+	VectorCopy( playerMins, ent->mins );
+	VectorCopy( playerMaxs, ent->maxs );
+	const qboolean found = G_CoopFindSpotNear( ent, partner->currentOrigin, spot );
+	VectorCopy( deadMins, ent->mins );
+	VectorCopy( deadMaxs, ent->maxs );
+	if ( !found ) {
 		if ( g_coopLastCountdown != 0 ) {
 			g_coopLastCountdown = 0;
 			G_CoopCenterPrint( "Ceka se, az bude partner na bezpecnem miste" );
@@ -165,10 +274,7 @@ static void G_CoopCmd_P2State( void ) {		// host
 	gi.cvar_set( "coop_p2fplvl", gi.argv( 5 ) );
 }
 
-static void G_CoopCmd_P2Need( void ) {		// host: the guest came in without its state
-	if ( g_coopMode != COOP_MODE_HOST ) {
-		return;
-	}
+static void G_CoopAnswerNeed( void ) {		// host
 	char save[256], ammo[256], inv[256], fplvl[256];
 	gi.Cvar_VariableStringBuffer( "coop_p2save", save, sizeof( save ) );
 	gi.Cvar_VariableStringBuffer( "coop_p2ammo", ammo, sizeof( ammo ) );
@@ -183,6 +289,17 @@ static void G_CoopCmd_P2Need( void ) {		// host: the guest came in without its s
 	}
 }
 
+static void G_CoopCmd_P2Need( void ) {		// host: the guest came in without its state
+	if ( g_coopMode != COOP_MODE_HOST ) {
+		return;
+	}
+	if ( !G_CoopP2SendChar() ) {
+		g_coopNeedPending = qtrue;
+		return;
+	}
+	G_CoopAnswerNeed();
+}
+
 static void G_CoopCmd_P2Restore( void ) {	// guest
 	gentity_t *ent = &g_entities[0];
 	if ( g_coopMode != COOP_MODE_GUEST || !ent->client ) {
@@ -193,29 +310,64 @@ static void G_CoopCmd_P2Restore( void ) {	// guest
 	gi.cvar_set( "playerinv", gi.argv( 4 ) );
 	gi.cvar_set( "playerfplvl", gi.argv( 5 ) );
 	Player_RestoreFromPrevLevel( ent );
+	G_CoopP2Restrict( ent );	// Jan: Kyle's saber goes before it gets a saber entity
 	if ( ent->client->ps.stats[STAT_WEAPONS] & ( 1 << WP_SABER ) ) {
 		WP_SaberInitBladeData( ent );
 	}
-	G_CoopP2Restrict( ent );
 	gi.Printf( "COOP: state restored from the host\n" );
 }
 
-static void G_CoopCmd_Near( void ) {		// guest: just came in, go stand next to Kyle
-	if ( g_coopMode != COOP_MODE_GUEST || !g_entities[0].client ) {
+// guest: just came in, go stand next to Kyle - once the host's world is here (doors and NPCs in their place,
+// Kyle where he is now, not where the command said), trying for a while if there is no free spot yet
+static void G_CoopCmd_Near( void ) {
+	if ( g_coopMode != COOP_MODE_GUEST ) {
 		return;
 	}
-	const vec3_t kyle = { (float)atof( gi.argv( 2 ) ), (float)atof( gi.argv( 3 ) ), (float)atof( gi.argv( 4 ) ) };
-	const float dist = Distance( g_entities[0].currentOrigin, kyle );
-	if ( dist < 48 || dist > 512 ) {	// on top of each other at the spawn point, or far away
-		G_CoopTeleportNear( &g_entities[0], kyle );
+	g_coopNearPending = qtrue;
+	g_coopNearUntil = 0;
+}
+
+static void G_CoopNearFrame( gentity_t *self ) {
+	const gentity_t *kyle = &g_entities[1];
+	if ( !gi.Coop_WorldSynced || !gi.Coop_WorldSynced() || !kyle->inuse || !kyle->client || self->health <= 0 ) {
+		return;		// the host's world is not synced yet (Kyle's puppet comes before the rest of the first snapshot)
+	}
+	if ( in_camera ) {
+		g_coopNearPending = qfalse;		// the cutscene's end places us (design 21)
+		gi.Printf( "COOP: joined in a cutscene, its end places us\n" );
+		return;
+	}
+	if ( !g_coopNearUntil ) {
+		g_coopNearUntil = level.time + COOP_NEAR_RETRY_MS;
+	}
+	const float dist = Distance( self->currentOrigin, kyle->currentOrigin );
+	if ( dist >= 48 && dist <= 128 ) {	// not on top of each other at the spawn point, not far away
+		g_coopNearPending = qfalse;
+		gi.Printf( "COOP: already next to the partner (%.0f away)\n", dist );
+		return;
+	}
+	vec3_t spot;
+	if ( G_CoopFindSpotNear( self, kyle->currentOrigin, spot ) ) {
+		g_coopNearPending = qfalse;
+		G_CoopTeleportNear( self, kyle->currentOrigin );
+	} else if ( level.time >= g_coopNearUntil ) {
+		g_coopNearPending = qfalse;
+		gi.Printf( "COOP: no free spot next to the partner (%.0f %.0f %.0f, %.0f away), staying here\n",
+			kyle->currentOrigin[0], kyle->currentOrigin[1], kyle->currentOrigin[2], dist );
 	}
 }
 
 void G_CoopLifeFrame( void ) {
 	gentity_t *self = &g_entities[0];
+	if ( self->client && self->health > 0 ) {
+		g_coopThrowKnown = self->client->ps.forcePowersKnown & ( 1 << FP_SABERTHROW );
+		g_coopThrowLevel = self->client->ps.forcePowerLevel[FP_SABERTHROW];
+	}
 	if ( !G_CoopPartnerInWorld() ) {
 		g_coopArrived = qfalse;
 		g_coopNeedSent = qfalse;
+		g_coopNearPending = qfalse;
+		g_coopNeedPending = qfalse;
 		return;
 	}
 	if ( !self->inuse || !self->client ) {
@@ -227,14 +379,21 @@ void G_CoopLifeFrame( void ) {
 			G_CoopSend( "near %.0f %.0f %.0f", self->currentOrigin[0], self->currentOrigin[1], self->currentOrigin[2] );
 		}
 	}
+	if ( g_coopNeedPending && G_CoopP2SendChar() ) {
+		g_coopNeedPending = qfalse;
+		G_CoopAnswerNeed();
+	}
 	if ( g_coopMode != COOP_MODE_GUEST ) {
 		return;
 	}
+	if ( g_coopNearPending ) {
+		G_CoopNearFrame( self );
+	}
 	if ( !g_coopNeedSent ) {
 		g_coopNeedSent = qtrue;
-		char s[16];
-		gi.Cvar_VariableStringBuffer( "playersave", s, sizeof( s ) );
-		if ( !s[0] ) {
+		if ( !g_coopCameWithState ) {
+			g_coopCameWithState = qtrue;	// once per level
+			gi.Printf( "COOP: came without a carried state, asking the host for it\n" );
 			G_CoopSend( "p2need" );		// we came with "map", not with the host's level change
 		}
 	}

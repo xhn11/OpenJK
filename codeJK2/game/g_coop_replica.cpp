@@ -321,6 +321,20 @@ void G_Coop_ApplyEntity( int entNum, const entityState_t *es, const playerState_
 	const trajectory_t localPos = ent->s.pos, localApos = ent->s.apos;
 	ent->s = *es;
 	ent->s.number = entNum;
+	// the sender swaps 0 <-> 1 in every entity number field, also where 0 is no entity: an effect attached
+	// to nothing would follow the partner's player, a speaker without "random" would play all the time
+	const int event = es->eType > ET_EVENTS ? es->eType - ET_EVENTS : ( es->event & ~EV_EVENT_BITS );
+	if ( event == EV_PLAY_EFFECT && ent->s.otherEntityNum == 1 ) {
+		ent->s.otherEntityNum = 0;
+	}
+	if ( es->eType == ET_SPEAKER && ( es->clientNum == 0 || es->clientNum == 1 ) ) {
+		ent->s.clientNum = 1 - es->clientNum;	// random * 10, no entity
+	}
+	if ( !ent->client && !ent->bmodel && es->solid == SOLID_BMODEL && es->modelindex > 0 ) {
+		// a map brush entity we freed while the host hid it, rebuilt from its classname: without its inline
+		// model cgame draws model_draw[modelindex] (nothing or a wrong model) and linking makes it a box
+		gi.SetBrushModel( ent, va( "*%d", es->modelindex ) );
+	}
 	if ( !fresh && es->eType == ET_MOVER ) {
 		if ( G_CoopKeepLocalMove( &localPos, &es->pos ) ) {
 			ent->s.pos = localPos;
@@ -332,10 +346,16 @@ void G_Coop_ApplyEntity( int entNum, const entityState_t *es, const playerState_
 	if ( ent->client && ps ) {
 		char *saberModel = ent->client->ps.saberModel;	// a pointer into this machine's memory (plan-M3 R1)
 		const int saberEntityNum = ent->client->ps.saberEntityNum;	// the puppet's saber entity is ours
+		if ( entNum == 1 ) {
+			// the AI's stealth check counts turning from lastAngles, which only ClientThink sets: from the
+			// previous snapshot's view, not from 0 0 0 (the puppet's yaw itself would count as turning)
+			VectorCopy( fresh ? ps->viewangles : ent->client->ps.viewangles, ent->lastAngles );
+		}
 		ent->client->ps = *ps;
 		ent->client->ps.saberModel = saberModel;
 		if ( entNum == 1 ) {
 			ent->client->ps.saberEntityNum = saberEntityNum;
+			ent->client->usercmd.upmove = ( ps->pm_flags & PMF_DUCKED ) ? -127 : 0;	// the AI sees crouching here
 		}
 		ent->client->usercmd.buttons = ex->buttons;
 	}
@@ -361,6 +381,16 @@ void G_Coop_ApplyEntity( int entNum, const entityState_t *es, const playerState_
 	} else if ( ent->s.eType != ET_MOVER || fresh ) {
 		EvaluateTrajectory( &ent->s.pos, level.time, ent->currentOrigin );
 		EvaluateTrajectory( &ent->s.apos, level.time, ent->currentAngles );
+	}
+	// the effect's axis: cgame takes it from the game-only pos3/pos4 (cg_event.cpp EV_PLAY_EFFECT)
+	if ( !ent->client && ent->classname && !Q_stricmp( ent->classname, "fx_runner" ) ) {
+		vec3_t temp;	// as fx_runner_think
+		AngleVectors( ent->currentAngles, ent->pos3, NULL, NULL );
+		MakeNormalVectors( ent->pos3, ent->pos4, temp );
+	} else if ( es->eType == ET_EVENTS + EV_PLAY_EFFECT && VectorLengthSquared( ent->pos3 ) == 0 ) {
+		vec3_t temp;	// G_PlayEffect's direction is not in entityState_t: up
+		VectorSet( ent->pos3, 0, 0, 1 );
+		MakeNormalVectors( ent->pos3, ent->pos4, temp );
 	}
 	if ( ex->linked ) {
 		gi.linkentity( ent );

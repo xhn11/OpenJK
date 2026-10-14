@@ -141,6 +141,9 @@ void G_PlayEffect( int fxID, vec3_t origin, vec3_t fwd )
 }
 
 // Play an effect at the origin of the specified entity
+// coop: no caller today. The guest maps otherEntityNum 1 -> 0 for EV_PLAY_EFFECT (g_coop_replica.cpp,
+// 0 is "no entity" swapped by the sender), so an effect on the host's player (0, 1 on the wire) would
+// end up on nothing: revisit that mapping before attaching an effect to a player here.
 //----------------------------
 void G_PlayEffect( int fxID, int entNum, vec3_t fwd )
 {

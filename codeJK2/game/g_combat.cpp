@@ -745,6 +745,10 @@ void G_StartMatrixEffect( gentity_t *ent, qboolean falling = qfalse, int length 
 	{//already in some slow-mo mode
 		return;
 	}
+	if ( g_coopMode != COOP_MODE_SOLO && ent->s.number != 0 )
+	{//coop: no slow-mo covers the camera spin (and nothing stops a second one), only our own player's death gets it
+		return;
+	}
 
 	gentity_t	*matrix = G_Spawn();
 	if ( matrix )
@@ -4821,6 +4825,11 @@ void G_Damage( gentity_t *targ, gentity_t *inflictor, gentity_t *attacker, vec3_
 		return;
 	}
 	if (!targ->takedamage) {
+		return;
+	}
+	G_CoopNoteDanger( targ, inflictor, attacker, mod );	//coop: where the world hurt our player, the respawn keeps away (also while shielded)
+	if ( G_CoopRespawnShield( targ, dflags, mod ) )
+	{//coop: a just revived player may stand up in a fire lane next to the partner
 		return;
 	}
 

@@ -26,6 +26,7 @@ void G_CoopInitGame( void ) {
 	G_CoopP2Init();
 	G_CoopLifeInit();
 	G_CoopClaimInit();
+	G_CoopTriggerInit();
 	g_coopOwner[0] = (signed char)( g_coopMode == COOP_MODE_GUEST ? COOP_MODE_GUEST : COOP_MODE_HOST );
 	g_coopOwner[1] = (signed char)( g_coopMode == COOP_MODE_GUEST ? COOP_MODE_HOST : COOP_MODE_GUEST );
 	if ( g_coopMode != COOP_MODE_SOLO ) {
