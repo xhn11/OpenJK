@@ -234,6 +234,9 @@ void G_CoopP2Frame( void ) {
 		return;
 	}
 	if ( g_coopP2Char == COOP_P2_NONE ) {
+		if ( !( kyle->client->ps.stats[STAT_WEAPONS] & ( 1 << WP_NONE ) ) ) {
+			return;		// a loaded save gives Kyle his weapons only in ClientSpawn, a spawned player always has WP_NONE
+		}
 		g_coopP2Char = ( kyle->client->ps.stats[STAT_WEAPONS] & ( 1 << WP_SABER ) ) ? COOP_P2_LUKE : COOP_P2_JAN;
 	}
 	if ( !G_CoopPartnerInWorld() ) {
