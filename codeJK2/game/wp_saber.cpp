@@ -196,6 +196,19 @@ float forceSpeedValue[NUM_FORCE_POWER_LEVELS] =
 	0.25f
 };
 
+// coop: both machines share one clock (the host's), so Force Speed does not slow it with the
+// timescale - only its user (our player) runs faster. Returns the factor its own movement, animation,
+// refire and saber trace times are scaled by, as the timescale compensation does in solo; the
+// duration and the cost stay as in solo (the same world time). 1 = not sped up, always 1 in solo
+float WP_CoopSpeedScale( const playerState_t *ps )
+{
+	if ( g_coopMode == COOP_MODE_SOLO || ps->clientNum != 0 || !(ps->forcePowersActive&(1<<FP_SPEED)) )
+	{//NPCs keep their solo behaviour: no compensation while the clock runs normally
+		return 1.0f;
+	}
+	return forceSpeedValue[ps->forcePowerLevel[FP_SPEED]];
+}
+
 float forceSpeedRangeMod[NUM_FORCE_POWER_LEVELS] =
 {
 	0.0f,//none
@@ -2692,7 +2705,7 @@ void WP_SaberDamageTrace( gentity_t *ent )
 			else
 			{//saber is transitioning, defending or idle, don't do as much damage
 				//FIXME: strong attacks and returns should do damage and be unblockable
-				if ( g_timescale->value < 1.0 )
+				if ( g_timescale->value < 1.0 || WP_CoopSpeedScale( &ent->client->ps ) < 1.0f )
 				{//in slow mo or force speed, we need to do damage during the transitions
 					if ( g_saberRealisticCombat->integer )
 					{
@@ -2795,7 +2808,14 @@ void WP_SaberDamageTrace( gentity_t *ent )
 	}
 	else if ( (!ent->s.number&&ent->client->ps.forcePowersActive&(1<<FP_SPEED)) )
 	{
-		baseDamage *= (1.0f-g_timescale->value);
+		if ( g_coopMode != COOP_MODE_SOLO )
+		{//coop: the timescale stays 1, the player's own speed factor stands in for it
+			baseDamage *= (1.0f-WP_CoopSpeedScale( &ent->client->ps ));
+		}
+		else
+		{
+			baseDamage *= (1.0f-g_timescale->value);
+		}
 	}
 	// Get the old state of the blade
 	VectorCopy( mp1, baseOld );
@@ -2841,7 +2861,7 @@ void WP_SaberDamageTrace( gentity_t *ent )
 			|| PM_SaberInSpecialAttack( ent->client->ps.torsoAnim )
 			|| PM_SpinningSaberAnim( ent->client->ps.torsoAnim )
 			|| PM_InSpecialJump( ent->client->ps.torsoAnim )
-			|| (g_timescale->value<1.0f&&PM_SaberInTransitionAny( ent->client->ps.saberMove )) )
+			|| ((g_timescale->value<1.0f||WP_CoopSpeedScale( &ent->client->ps )<1.0f)&&PM_SaberInTransitionAny( ent->client->ps.saberMove )) )
 		{
 			curDirFrac = DotProduct( md1, md2 );
 		}
@@ -7850,8 +7870,8 @@ void WP_ForcePowerStop( gentity_t *self, forcePowers_t forcePower )
 		self->client->ps.forcePowerDebounce[FP_LEVITATION] = 0;
 		break;
 	case FP_SPEED:
-		if ( !self->s.number )
-		{//player using force speed
+		if ( !self->s.number && g_coopMode == COOP_MODE_SOLO )
+		{//player using force speed (coop: never set it, so a scripted timescale is left alone)
 			if ( g_timescale->value != 1.0 )
 			{
 				gi.cvar_set("timescale", "1");
@@ -8087,8 +8107,8 @@ static void WP_ForcePowerRun( gentity_t *self, forcePowers_t forcePower, usercmd
 		break;
 	case FP_SPEED:
 		speed = forceSpeedValue[self->client->ps.forcePowerLevel[FP_SPEED]];
-		if ( !self->s.number )
-		{//player using force speed
+		if ( !self->s.number && g_coopMode == COOP_MODE_SOLO )
+		{//player using force speed (coop: the clock is shared, WP_CoopSpeedScale speeds up only the player)
 			gi.cvar_set("timescale", va("%4.2f", speed));
 			if ( g_timescale->value > speed )
 			{

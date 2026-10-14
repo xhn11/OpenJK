@@ -5536,7 +5536,9 @@ extern vmCvar_t	cg_thirdPersonAlpha;
 		//CG_RunLerpFrame( ci, &cent->pe.torso, cent->gent->client->ps.torsoAnim, cent->gent->client->renderInfo.torsoFpsMod, cent->gent->s.number );
 		if ( cent->gent && cent->gent->client && cent->gent->client->ps.weapon == WP_SABER )
 		{
-			if ( cg_timescale.value < 1.0f && (cent->gent->client->ps.forcePowersActive&(1<<FP_SPEED)) )
+			// coop: the timescale stays 1, the Force Speed user's own speed factor stands in for it
+			const float speedScale = WP_CoopSpeedScale( &cent->gent->client->ps );
+			if ( (cg_timescale.value < 1.0f || speedScale < 1.0f) && (cent->gent->client->ps.forcePowersActive&(1<<FP_SPEED)) )
 			{
 				int wait = floor( (float)FRAMETIME/2.0f );
 				//sanity check
@@ -5550,7 +5552,7 @@ extern void WP_SaberDamageTrace( gentity_t *ent );
 extern void WP_SaberUpdateOldBladeData( gentity_t *ent );
 					WP_SaberDamageTrace( cent->gent );
 					WP_SaberUpdateOldBladeData( cent->gent );
-					cent->gent->client->ps.saberDamageDebounceTime = cg.time + floor((float)wait*cg_timescale.value);
+					cent->gent->client->ps.saberDamageDebounceTime = cg.time + floor((float)wait*(speedScale < 1.0f ? speedScale : cg_timescale.value));
 				}
 			}
 		}

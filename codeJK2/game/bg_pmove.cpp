@@ -7519,7 +7519,11 @@ void PM_WeaponLightsaber(void)
 		if ( !addTime )
 		{
 			addTime = weaponData[pm->ps->weapon].altFireTime;
-			if ( g_timescale != NULL )
+			if ( g_coopMode != COOP_MODE_SOLO )
+			{//coop: Force Speed speeds up only its user, the clock is shared (WP_CoopSpeedScale)
+				addTime *= WP_CoopSpeedScale( pm->ps );
+			}
+			else if ( g_timescale != NULL )
 			{
 				if ( g_timescale->value < 1.0f )
 				{
@@ -7543,7 +7547,11 @@ void PM_WeaponLightsaber(void)
 		if ( !addTime )
 		{
 			addTime = weaponData[pm->ps->weapon].fireTime;
-			if ( g_timescale != NULL )
+			if ( g_coopMode != COOP_MODE_SOLO )
+			{//coop: Force Speed speeds up only its user, the clock is shared (WP_CoopSpeedScale)
+				addTime *= WP_CoopSpeedScale( pm->ps );
+			}
+			else if ( g_timescale != NULL )
 			{
 				if ( g_timescale->value < 1.0f )
 				{
@@ -8325,7 +8333,11 @@ static void PM_Weapon( void )
 			return;
 	}
 
-	if ( g_timescale != NULL )
+	if ( g_coopMode != COOP_MODE_SOLO )
+	{//coop: Force Speed speeds up only its user, the clock is shared (WP_CoopSpeedScale)
+		addTime *= WP_CoopSpeedScale( pm->ps );
+	}
+	else if ( g_timescale != NULL )
 	{
 		if ( g_timescale->value < 1.0f )
 		{
@@ -8517,7 +8529,11 @@ void PM_SetSpecialMoveValues (void )
 		}
 	}
 
-	if ( g_timescale != NULL )
+	if ( g_coopMode != COOP_MODE_SOLO )
+	{//coop: Force Speed speeds up only its user, the clock is shared (WP_CoopSpeedScale)
+		pml.frametime *= (1.0f/WP_CoopSpeedScale( pm->ps ));
+	}
+	else if ( g_timescale != NULL )
 	{
 		if ( g_timescale->value < 1.0f )
 		{

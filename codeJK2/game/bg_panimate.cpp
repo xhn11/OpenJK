@@ -2195,6 +2195,10 @@ extern qboolean		player_locked;
 extern qboolean		MatrixMode;
 float PM_GetTimeScaleMod( gentity_t *gent )
 {
+	if ( g_coopMode != COOP_MODE_SOLO )
+	{//coop: Force Speed speeds up only its user, the clock is shared (WP_CoopSpeedScale)
+		return ( gent && gent->client ) ? (1.0f / WP_CoopSpeedScale( &gent->client->ps )) : 1.0f;
+	}
 	if ( g_timescale->value )
 	{
 		if ( !MatrixMode )
