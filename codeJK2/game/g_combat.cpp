@@ -4827,6 +4827,11 @@ void G_Damage( gentity_t *targ, gentity_t *inflictor, gentity_t *attacker, vec3_
 	if (!targ->takedamage) {
 		return;
 	}
+	G_CoopNoteDanger( targ, inflictor, attacker, mod );	//coop: where the world hurt our player, the respawn keeps away (also while shielded)
+	if ( G_CoopRespawnShield( targ, dflags, mod ) )
+	{//coop: a just revived player may stand up in a fire lane next to the partner
+		return;
+	}
 
 	if ( targ->health <= 0 && !targ->client )
 	{	// allow corpses to be disintegrated

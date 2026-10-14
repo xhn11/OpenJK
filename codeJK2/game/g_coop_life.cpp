@@ -18,6 +18,10 @@ extern bool		in_camera;
 #define COOP_BOTH_DEAD_MS		3000
 #define COOP_P2STATE_MS			5000
 #define COOP_NEAR_RETRY_MS		5000
+#define COOP_RESPAWN_SHIELD_MS	3000	// a revived player stands up next to the partner, maybe in a fire lane
+#define COOP_DANGER_SPOTS		8
+#define COOP_DANGER_MS			45000	// a few respawn cycles (coop_respawnDelay 10 s and the death): two bad spots don't take turns
+#define COOP_DANGER_RADIUS		96.0f
 
 static cvar_t	*coop_respawnDelay;
 static int		g_coopDeathTime;		// level.time our player died, 0 alive
@@ -31,11 +35,21 @@ static int		g_coopThrowLevel;
 static qboolean	g_coopNearPending;		// guest: the host asked us to come next to Kyle
 static int		g_coopNearUntil;		// level.time the tries give up, 0 not started
 static qboolean	g_coopNeedPending;		// host: p2need waits for player 2's character (a loaded save gives Kyle his weapons late)
+static int		g_coopShieldUntil;		// level.time our revived player takes damage again
 static qboolean	g_coopCameWithState;	// guest: playersave was set at InitGame (the host's level change), before the map-start autosave fills it
+
+typedef struct {
+	vec3_t		org;
+	int			time;					// level.time of the last hit there
+	qboolean	used;
+} coopDanger_t;
+static coopDanger_t	g_coopDanger[COOP_DANGER_SPOTS];	// where the world hurt our player lately
+static int			g_coopDangerNext;
 
 void G_CoopLifeInit( void ) {
 	coop_respawnDelay = gi.cvar( "coop_respawnDelay", "10", CVAR_ARCHIVE );
 	g_coopDeathTime = 0;
+	g_coopShieldUntil = 0;
 	g_coopBothDeadTime = 0;
 	g_coopLastCountdown = -1;
 	g_coopNextP2State = 0;
@@ -44,6 +58,8 @@ void G_CoopLifeInit( void ) {
 	g_coopArrived = qfalse;
 	g_coopThrowKnown = -1;
 	g_coopNearPending = qfalse;
+	memset( g_coopDanger, 0, sizeof( g_coopDanger ) );
+	g_coopDangerNext = 0;
 	char s[16];
 	gi.Cvar_VariableStringBuffer( "playersave", s, sizeof( s ) );
 	g_coopCameWithState = (qboolean)( s[0] != 0 );
@@ -55,6 +71,51 @@ void G_CoopLifeInit( void ) {
 }
 
 // ---------------------------------------------------------------- respawn next to the partner (design 10)
+
+// G_Damage: our player was just revived, damage waits a moment (not what DAMAGE_NO_PROTECTION does: pits, kill;
+// not a crush either: a mover would stay blocked by us)
+qboolean G_CoopRespawnShield( const gentity_t *targ, int dflags, int mod ) {
+	return (qboolean)( targ->s.number == 0 && level.time < g_coopShieldUntil && !( dflags & DAMAGE_NO_PROTECTION ) && mod != MOD_CRUSH );
+}
+
+// G_Damage: the world hurt our player here (fire lanes, explosions, hurts, lava; not a character's shot,
+// a fall or a crush): placing us next to the partner keeps away from it for a while (yavin_final fireballs)
+static qboolean G_CoopDangerLive( const coopDanger_t *d ) {
+	return (qboolean)( d->used && d->time <= level.time && level.time - d->time < COOP_DANGER_MS );	// a load moves time back
+}
+
+static qboolean G_CoopIsCharacter( const gentity_t *ent ) {
+	return (qboolean)( ent && ( ent->client || ent->s.eType == ET_PLAYER ) );
+}
+
+void G_CoopNoteDanger( const gentity_t *targ, const gentity_t *inflictor, const gentity_t *attacker, int mod ) {
+	if ( g_coopMode == COOP_MODE_SOLO || targ->s.number != 0 || mod == MOD_FALLING || mod == MOD_CRUSH
+		|| G_CoopIsCharacter( attacker ) || G_CoopIsCharacter( inflictor ) ) {
+		return;
+	}
+	for ( int i = 0; i < COOP_DANGER_SPOTS; i++ ) {
+		coopDanger_t *d = &g_coopDanger[i];
+		if ( G_CoopDangerLive( d ) && DistanceSquared( d->org, targ->currentOrigin ) < COOP_DANGER_RADIUS * COOP_DANGER_RADIUS * 0.25f ) {
+			d->time = level.time;		// the same spot again (a burst is many hits): older spots stay known
+			return;
+		}
+	}
+	coopDanger_t *d = &g_coopDanger[g_coopDangerNext];
+	g_coopDangerNext = ( g_coopDangerNext + 1 ) % COOP_DANGER_SPOTS;
+	VectorCopy( targ->currentOrigin, d->org );
+	d->time = level.time;
+	d->used = qtrue;
+}
+
+qboolean G_CoopNearDanger( const vec3_t spot ) {
+	for ( int i = 0; i < COOP_DANGER_SPOTS; i++ ) {
+		const coopDanger_t *d = &g_coopDanger[i];
+		if ( G_CoopDangerLive( d ) && DistanceSquared( d->org, spot ) < COOP_DANGER_RADIUS * COOP_DANGER_RADIUS ) {
+			return qtrue;
+		}
+	}
+	return qfalse;
+}
 
 // the partner lives, so our death only waits for a respawn: no SP mission failed screen, scripts go on
 qboolean G_CoopPartnerAlive( void ) {
@@ -108,6 +169,7 @@ static void G_CoopRevive( gentity_t *ent, const vec3_t near ) {
 		level.dmState = DM_AUTO;	// host: SP never leaves the death music, a death always reloads (G_DynamicMusicUpdate)
 	}
 	G_CoopTeleportNear( ent, near );
+	g_coopShieldUntil = level.time + COOP_RESPAWN_SHIELD_MS;
 	G_CoopCenterPrint( "" );
 	gi.Printf( "COOP: respawned next to the partner\n" );
 }
@@ -147,8 +209,16 @@ qboolean G_CoopRespawnThink( gentity_t *ent ) {
 		}
 		return qtrue;
 	}
-	vec3_t spot;
-	if ( !G_CoopFindSpotNear( ent, partner->currentOrigin, spot ) ) {
+	// look with the standing box the revive gives us, not the corpse's (player_die lowers maxs)
+	vec3_t spot, deadMins, deadMaxs;
+	VectorCopy( ent->mins, deadMins );
+	VectorCopy( ent->maxs, deadMaxs );
+	VectorCopy( playerMins, ent->mins );
+	VectorCopy( playerMaxs, ent->maxs );
+	const qboolean found = G_CoopFindSpotNear( ent, partner->currentOrigin, spot );
+	VectorCopy( deadMins, ent->mins );
+	VectorCopy( deadMaxs, ent->maxs );
+	if ( !found ) {
 		if ( g_coopLastCountdown != 0 ) {
 			g_coopLastCountdown = 0;
 			G_CoopCenterPrint( "Ceka se, az bude partner na bezpecnem miste" );

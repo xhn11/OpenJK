@@ -48,18 +48,42 @@ void G_CoopP2Init( void ) {
 
 // ---------------------------------------------------------------- placing player 2 next to Kyle
 
-static qboolean G_CoopSpotFree( gentity_t *ent, const vec3_t from, const vec3_t spot ) {
+static qboolean G_CoopSpotFree( gentity_t *ent, const vec3_t from, int inside, const vec3_t spot ) {
 	trace_t tr;
-	// from is inside the partner (entity 1): its body must not block the way out; ours is unlinked
-	gi.trace( &tr, from, ent->mins, ent->maxs, spot, 1, MASK_PLAYERSOLID, G2_NOCOLLIDE, 0 );
+	if ( ent->s.number == 0 && G_CoopNearDanger( spot ) ) {
+		return qfalse;		// the world hurt us here lately (a fire lane, an explosion)
+	}
+	// from is inside the body standing at it (inside): that body must not block the way out; ours is unlinked
+	gi.trace( &tr, from, ent->mins, ent->maxs, spot, inside, MASK_PLAYERSOLID, G2_NOCOLLIDE, 0 );
 	if ( tr.startsolid || tr.allsolid || tr.fraction < 1.0f ) {
 		return qfalse;
 	}
 	vec3_t down;
 	VectorCopy( spot, down );
 	down[2] -= 128;
-	gi.trace( &tr, spot, ent->mins, ent->maxs, down, ent->s.number, MASK_PLAYERSOLID, G2_NOCOLLIDE, 0 );
-	return (qboolean)( !tr.startsolid && tr.fraction < 1.0f );		// ground below, not a pit
+	// lava and slime stop the trace too: a shallow pool's floor is no ground
+	gi.trace( &tr, spot, ent->mins, ent->maxs, down, ent->s.number, MASK_PLAYERSOLID | CONTENTS_LAVA | CONTENTS_SLIME, G2_NOCOLLIDE, 0 );
+	if ( tr.startsolid || tr.fraction >= 1.0f ) {
+		return qfalse;		// no ground below, a pit
+	}
+	if ( ( tr.contents & ( CONTENTS_LAVA | CONTENTS_SLIME ) )
+		|| ( gi.pointcontents( tr.endpos, ent->s.number ) & ( CONTENTS_LAVA | CONTENTS_SLIME ) ) ) {
+		return qfalse;
+	}
+	// where we land, not inside a hazard that hurts a player and is on (an off trigger_hurt is unlinked or inactive)
+	vec3_t mins, maxs;
+	VectorAdd( tr.endpos, ent->mins, mins );
+	VectorAdd( tr.endpos, ent->maxs, maxs );
+	gentity_t *touch[MAX_GENTITIES];
+	const int num = gi.EntitiesInBox( mins, maxs, touch, MAX_GENTITIES );
+	for ( int i = 0; i < num; i++ ) {
+		const gentity_t *hurt = touch[i];
+		if ( hurt->classname && !Q_stricmp( hurt->classname, "trigger_hurt" ) && !( hurt->svFlags & SVF_INACTIVE )
+			&& hurt->damage > 0 && !( hurt->NPC_targetname && hurt->NPC_targetname[0] ) ) {	// hurt_touch
+			return qfalse;
+		}
+	}
+	return qtrue;
 }
 
 // a free spot near org, qfalse when there is none
@@ -70,12 +94,22 @@ qboolean G_CoopFindSpotNear( gentity_t *ent, const vec3_t org, vec3_t out ) {
 	from[2] += 8;
 	const qboolean linked = ent->linked;
 	gi.unlinkentity( ent );
+	// the partner (entity 1) stands at org, or after a cutscene the stand-in, solid on the guest
+	int inside = 1;
+	gentity_t *touch[MAX_GENTITIES];
+	const int num = gi.EntitiesInBox( from, from, touch, MAX_GENTITIES );
+	for ( int i = 0; i < num; i++ ) {
+		if ( touch[i]->contents & CONTENTS_BODY ) {
+			inside = touch[i]->s.number;
+			break;
+		}
+	}
 	qboolean found = qfalse;
 	for ( size_t d = 0; d < ARRAY_LEN( dists ) && !found; d++ ) {
 		for ( int a = 0; a < 8; a++ ) {
 			const float yaw = DEG2RAD( a * 45.0f );
 			vec3_t spot = { from[0] + cosf( yaw ) * dists[d], from[1] + sinf( yaw ) * dists[d], from[2] };
-			if ( G_CoopSpotFree( ent, from, spot ) ) {
+			if ( G_CoopSpotFree( ent, from, inside, spot ) ) {
 				VectorCopy( spot, out );
 				found = qtrue;
 				break;
@@ -91,7 +125,11 @@ qboolean G_CoopFindSpotNear( gentity_t *ent, const vec3_t org, vec3_t out ) {
 // TeleportPlayer without G_KillBox: never telefrag the partner standing at org
 void G_CoopTeleportNear( gentity_t *ent, const vec3_t org ) {
 	vec3_t spot;
-	if ( !ent->client || !G_CoopFindSpotNear( ent, org, spot ) ) {
+	if ( !ent->client ) {
+		return;
+	}
+	if ( !G_CoopFindSpotNear( ent, org, spot ) ) {
+		gi.Printf( "COOP: no free spot next to (%.0f %.0f %.0f), staying here\n", org[0], org[1], org[2] );
 		return;
 	}
 	gi.unlinkentity( ent );
