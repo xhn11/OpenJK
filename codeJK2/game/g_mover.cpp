@@ -62,6 +62,8 @@ typedef struct {
 } pushed_t;
 pushed_t	pushed[MAX_GENTITIES], *pushed_p;
 
+static qboolean	g_coopReplicaPush;	// G_CoopRunReplicaMover: the guest replays a mover the host runs
+
 
 /*
 -------------------------
@@ -221,6 +223,7 @@ qboolean	G_TryPushingEntity( gentity_t *check, gentity_t *pusher, vec3_t move, v
 	}
 	*/
 	block = G_TestEntityPosition( check );
+	const gentity_t *pushBlock = block;	// what the push itself ran into
 	if (!block) {
 		// pushed ok
 		if ( check->client ) {
@@ -248,8 +251,10 @@ qboolean	G_TryPushingEntity( gentity_t *check, gentity_t *pusher, vec3_t move, v
 	}
 
 	// blocked
-	if ( pusher->damage )
-	{//Do damage
+	if ( pusher->damage && ( !g_coopReplicaPush || pushBlock->s.number == ENTITYNUM_WORLD
+		|| ( pushBlock->bmodel && pushBlock != pusher ) || ( pusher->s.eFlags & EF_BLOCKED_MOVER ) ) )
+	{//Do damage (coop guest, replaying the host's mover: only against the world or another brush, or when
+	 //the host's mover is blocked too - not when our player was inside it already, e.g. after a time jump)
 		G_Damage(check, pusher, pusher->activator, move, check->currentOrigin, pusher->damage, 0, MOD_CRUSH );
 	}
 
@@ -587,8 +592,9 @@ void G_RunMover( gentity_t *ent ) {
 G_CoopRunReplicaMover
 
 Coop guest: a mover the host owns. Its trajectory comes from the host; evaluate it, push our own
-entities out of the way and never stop or reverse it (the host decides). If our player is stuck,
-G_TryPushingEntity crushes him with the mover's damage like in SP.
+entities out of the way and never stop or reverse it (the host decides). If our player is stuck
+against the world or another brush, or the host's mover is blocked too, G_TryPushingEntity crushes
+him with the mover's damage like in SP; the partner's bodies never block it.
 ================
 */
 void G_CoopRunReplicaMover( gentity_t *ent ) {
@@ -605,8 +611,32 @@ void G_CoopRunReplicaMover( gentity_t *ent ) {
 		EvaluateTrajectory( &part->s.apos, level.time, angles );
 		VectorSubtract( origin, part->currentOrigin, move );
 		VectorSubtract( angles, part->currentAngles, amove );
+		// the partner's bodies (its player, the NPCs the host runs) are placed by snapshots, not pushed here:
+		// our player pushed into one of them must not count as blocked (and crushed) - as in our pmove
+		// (G_CoopUnstickBegin), they are not solid for this push
+		gentity_t	*touch[MAX_GENTITIES], *bodies[32];
+		int			bodyContents[32], numBodies = 0;
+		vec3_t		mins, maxs;
+		for ( int i = 0; i < 3; i++ ) {
+			mins[i] = part->absmin[i] - fabs( move[i] ) - 64;
+			maxs[i] = part->absmax[i] + fabs( move[i] ) + 64;
+		}
+		const int num = gi.EntitiesInBox( mins, maxs, touch, MAX_GENTITIES );
+		for ( int i = 0; i < num && numBodies < (int)ARRAY_LEN( bodies ); i++ ) {
+			gentity_t *hit = touch[i];
+			if ( hit->client && ( hit->contents & CONTENTS_BODY ) && !G_CoopRunsLocally( hit ) ) {
+				bodies[numBodies] = hit;
+				bodyContents[numBodies++] = hit->contents;
+				hit->contents &= ~CONTENTS_BODY;
+			}
+		}
 		pushed_p = pushed;
+		g_coopReplicaPush = qtrue;
 		G_MoverPush( part, move, amove, &obstacle );	// moves part even when blocked
+		g_coopReplicaPush = qfalse;
+		while ( numBodies-- ) {
+			bodies[numBodies]->contents = bodyContents[numBodies];
+		}
 	}
 }
 
