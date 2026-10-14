@@ -321,6 +321,15 @@ void G_Coop_ApplyEntity( int entNum, const entityState_t *es, const playerState_
 	const trajectory_t localPos = ent->s.pos, localApos = ent->s.apos;
 	ent->s = *es;
 	ent->s.number = entNum;
+	// the sender swaps 0 <-> 1 in every entity number field, also where 0 is no entity: an effect attached
+	// to nothing would follow the partner's player, a speaker without "random" would play all the time
+	const int event = es->eType > ET_EVENTS ? es->eType - ET_EVENTS : ( es->event & ~EV_EVENT_BITS );
+	if ( event == EV_PLAY_EFFECT && ent->s.otherEntityNum == 1 ) {
+		ent->s.otherEntityNum = 0;
+	}
+	if ( es->eType == ET_SPEAKER && ( es->clientNum == 0 || es->clientNum == 1 ) ) {
+		ent->s.clientNum = 1 - es->clientNum;	// random * 10, no entity
+	}
 	if ( !fresh && es->eType == ET_MOVER ) {
 		if ( G_CoopKeepLocalMove( &localPos, &es->pos ) ) {
 			ent->s.pos = localPos;
@@ -361,6 +370,16 @@ void G_Coop_ApplyEntity( int entNum, const entityState_t *es, const playerState_
 	} else if ( ent->s.eType != ET_MOVER || fresh ) {
 		EvaluateTrajectory( &ent->s.pos, level.time, ent->currentOrigin );
 		EvaluateTrajectory( &ent->s.apos, level.time, ent->currentAngles );
+	}
+	// the effect's axis: cgame takes it from the game-only pos3/pos4 (cg_event.cpp EV_PLAY_EFFECT)
+	if ( !ent->client && ent->classname && !Q_stricmp( ent->classname, "fx_runner" ) ) {
+		vec3_t temp;	// as fx_runner_think
+		AngleVectors( ent->currentAngles, ent->pos3, NULL, NULL );
+		MakeNormalVectors( ent->pos3, ent->pos4, temp );
+	} else if ( es->eType == ET_EVENTS + EV_PLAY_EFFECT && VectorLengthSquared( ent->pos3 ) == 0 ) {
+		vec3_t temp;	// G_PlayEffect's direction is not in entityState_t: up
+		VectorSet( ent->pos3, 0, 0, 1 );
+		MakeNormalVectors( ent->pos3, ent->pos4, temp );
 	}
 	if ( ex->linked ) {
 		gi.linkentity( ent );
