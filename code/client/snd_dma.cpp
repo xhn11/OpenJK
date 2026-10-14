@@ -34,6 +34,7 @@ along with this program; if not, see <http://www.gnu.org/licenses/>.
 #include "snd_local.h"
 #include "cl_mp3.h"
 #include "snd_music.h"
+#include "../coop/coop_public.h"
 #define __STDC_FORMAT_MACROS
 #include <inttypes.h>
 #if defined(_WIN32)
@@ -4916,6 +4917,11 @@ static void S_CheckDynamicMusicState(void)
 			eNewState = eBGRNDTRACK_EXPLORE;
 		}
 
+		if ( Coop_Role() != COOP_ROLE_NONE && eMusic_StateActual == eBGRNDTRACK_DEATH && eNewState != eBGRNDTRACK_DEATH )
+		{// coop: a player lives again (no reload as in SP), and the death track can't be left - start the level's music over
+			Com_DPrintf( "S_CheckDynamicMusicState: leaving the death music, restarting the track\n" );
+			S_StartBackgroundTrack( gsIntroMusic, gsLoopMusic, qfalse );
+		}
 		S_SetDynamicMusicState( eNewState );
 	}
 

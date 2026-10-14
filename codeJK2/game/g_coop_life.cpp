@@ -104,6 +104,9 @@ static void G_CoopRevive( gentity_t *ent, const vec3_t near ) {
 	G_CoopP2Restrict( ent );
 	cl->ps.legsAnimTimer = cl->ps.torsoAnimTimer = 0;
 	NPC_SetAnim( ent, SETANIM_BOTH, BOTH_STAND2, SETANIM_FLAG_OVERRIDE );
+	if ( level.dmState == DM_DEATH ) {
+		level.dmState = DM_AUTO;	// host: SP never leaves the death music, a death always reloads (G_DynamicMusicUpdate)
+	}
 	G_CoopTeleportNear( ent, near );
 	G_CoopCenterPrint( "" );
 	gi.Printf( "COOP: respawned next to the partner\n" );
