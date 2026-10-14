@@ -26,6 +26,9 @@ static_assert( COOP_SNAP_MAX_NUM == MAX_GENTITIES, "coop_snap.h entity numbers" 
 #define COOP_EXTRAPOLATE_MS		250			// guest time runs at most this far past the newest snapshot
 #define COOP_TIME_JUMP_MS		500			// further behind than this, the guest jumps to the host's time
 #define COOP_TIME_SMOOTH		0.05		// how much of each snapshot's timing error the guest clock takes over
+#define COOP_RATE_WINDOW_MS		400			// the host's clock rate is measured over at least this long
+#define COOP_RATE_SLOW			0.9			// below this (twice in a row) the host runs a slow-mo: follow its rate
+#define COOP_RATE_CATCHUP_MS	2000		// in a slow-mo the guest clock takes up its error over about this long
 
 static cvar_t			*coop_snapshotBytes;
 static coopSnapRing_t	txRing, rxRing;
@@ -54,7 +57,11 @@ static int				applyClients;
 static int				guestServerTime;
 static int				guestServerTimeAt;	// Sys_Milliseconds() when guestServerTime was applied
 static qboolean			guestHaveTime;
-static double			guestOffset;		// host time - Sys_Milliseconds(), smoothed: the guest's clock runs evenly (stutter on lifts)
+static double			guestOffset;		// host time - guestRate * Sys_Milliseconds(), smoothed: the guest's clock runs evenly (stutter on lifts)
+static double			guestRate = 1.0;	// our clock's ms per real ms: < 1 while the host runs a scripted slow-mo (timescale)
+static double			guestHostRate = 1.0;	// the host's measured clock rate, 1 unless it runs a slow-mo
+static int				guestRateServer, guestRateAt;	// where the current rate window started
+static double			guestRateLast;		// the previous window's rate
 
 // the partner's eye position (design 8): from the coop_snapshot header (and coop_view, older peers)
 static vec3_t			peerView;
@@ -503,9 +510,43 @@ void CoopSnapshot_Frame( void ) {
 	if ( f && coop.role == COOP_ROLE_GUEST ) {
 		guestServerTime = f->serverTime;
 		guestServerTimeAt = Sys_Milliseconds();
-		const double offset = (double)guestServerTime - guestServerTimeAt;
-		// snapshots arrive unevenly: follow their average, not each one, or our frames bunch up and stall
-		guestOffset = ( !guestHaveTime || fabs( offset - guestOffset ) > COOP_TIME_JUMP_MS ) ? offset : guestOffset + ( offset - guestOffset ) * COOP_TIME_SMOOTH;
+		if ( !guestHaveTime ) {
+			guestRate = guestHostRate = guestRateLast = 1.0;
+			guestRateServer = guestServerTime;
+			guestRateAt = guestServerTimeAt;
+		} else if ( guestServerTimeAt - guestRateAt >= COOP_RATE_WINDOW_MS ) {
+			// a scripted slow-mo on the host (timescale) slows its clock: run at its rate instead of
+			// running ahead and standing until the next snapshot. One slow window can be a hitch, so two
+			const double rate = (double)( guestServerTime - guestRateServer ) / ( guestServerTimeAt - guestRateAt );
+			const double hostRate = ( rate < COOP_RATE_SLOW && guestRateLast < COOP_RATE_SLOW ) ? ( rate < 0.05 ? 0.05 : rate ) : 1.0;
+			if ( ( hostRate < 1.0 ) != ( guestHostRate < 1.0 ) ) {
+				Com_Printf( "COOP: host clock runs at %.2fx, following it\n", hostRate );
+			}
+			guestHostRate = hostRate;
+			guestRateLast = rate;
+			guestRateServer = guestServerTime;
+			guestRateAt = guestServerTimeAt;
+		}
+		const double clock = guestRate * guestServerTimeAt + guestOffset;	// our clock when this snapshot came
+		if ( !guestHaveTime || guestHostRate >= 1.0 ) {
+			if ( guestRate != 1.0 ) {	// back at the normal rate, no step in our clock
+				guestOffset = clock - guestServerTimeAt;
+				guestRate = 1.0;
+			}
+			const double offset = (double)guestServerTime - guestServerTimeAt;
+			// snapshots arrive unevenly: follow their average, not each one, or our frames bunch up and stall
+			guestOffset = ( !guestHaveTime || fabs( offset - guestOffset ) > COOP_TIME_JUMP_MS ) ? offset : guestOffset + ( offset - guestOffset ) * COOP_TIME_SMOOTH;
+		} else {
+			// slow-mo: few snapshots, a step back would stand for step / rate; correct through the rate
+			double err = guestServerTime - clock, at = clock;
+			if ( fabs( err ) > COOP_TIME_JUMP_MS ) {
+				at = guestServerTime;
+				err = 0;
+			}
+			guestRate = guestHostRate + err / COOP_RATE_CATCHUP_MS;
+			guestRate = guestRate < 0.05 ? 0.05 : guestRate > 1.0 ? 1.0 : guestRate;
+			guestOffset = at - guestRate * guestServerTimeAt;
+		}
 		guestHaveTime = qtrue;
 	}
 	if ( !rxSynced && complete ) {
@@ -559,7 +600,7 @@ qboolean Coop_GuestAdvanceTime( int frameMsec ) {
 	if ( coop.role != COOP_ROLE_GUEST || !guestHaveTime || !Coop_GuestInWorld() ) {
 		return qfalse;
 	}
-	int target = (int)( Sys_Milliseconds() + guestOffset );
+	int target = (int)( guestRate * Sys_Milliseconds() + guestOffset );
 	if ( target > guestServerTime + COOP_EXTRAPOLATE_MS ) {
 		target = guestServerTime + COOP_EXTRAPOLATE_MS;	// the host's snapshots stopped: wait for them
 	}
