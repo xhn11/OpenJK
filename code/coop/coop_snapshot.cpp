@@ -347,7 +347,7 @@ qboolean CoopSnapshot_Parse( msg_t *msg ) {
 		static qboolean warned;
 		if ( !warned ) {
 			warned = qtrue;
-			Com_Printf( "COOP: snapshot layout differs from this build (%d/%d/%d), host and guest must run the same build\n",
+			Com_Printf( "COOP: snapshot layout differs from this build (%d/%d/%d), snapshots ignored\n",
 				esSize, psSize, exSize );
 		}
 		return qtrue;

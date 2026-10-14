@@ -7,8 +7,6 @@ static cvar_t *coop_role;
 static cvar_t *coop_simLoss, *coop_simLatency, *coop_autotestCount;
 static cvar_t *coop_onlink;
 static cvar_t *coop_password;
-static cvar_t *coop_checkPaks;
-#define COOP_BUILD_ID	__DATE__ " " __TIME__	// coop_link.cpp is rebuilt with the engine: same binary, same id
 
 coopRole_t	Coop_Role( void )		{ return coop.role; }
 qboolean	Coop_IsLinked( void )	{ return (qboolean)( coop.state == COOP_LINK_ACTIVE ); }
@@ -197,7 +195,7 @@ static void Coop_Find_f( void ) {
 	adr.type = NA_IP;
 	adr.ip[0] = adr.ip[1] = adr.ip[2] = adr.ip[3] = 255;
 	adr.port = BigShort( (short)( coop_port->integer > 0 ? coop_port->integer : COOP_DEFAULT_PORT ) );
-	NET_OutOfBandPrint( NS_CLIENT, adr, "coopDiscover %d", COOP_PROTOCOL_VERSION );
+	NET_OutOfBandPrint( NS_CLIENT, adr, "coopDiscover" );
 	coopFindUntil = Sys_Milliseconds() + COOP_FIND_MS;
 	coopFound = 0;
 	Com_Printf( "COOP: looking for games on the LAN...\n" );
@@ -320,36 +318,23 @@ static void Coop_ConnectionlessPacket( netadr_t from, msg_t *msg ) {
 	const char *c = Cmd_Argv( 0 );
 
 	if ( coop.role == COOP_ROLE_HOST && !Q_stricmp( c, "coopDiscover" ) ) {
-		NET_OutOfBandPrint( NS_SERVER, from, "coopInfo \"%s\" \"%s\" %d %d", coop_name->string,
-			sv_mapname ? sv_mapname->string : "", coop.state == COOP_LINK_ACTIVE ? 1 : 0, atoi( Cmd_Argv( 1 ) ) == COOP_PROTOCOL_VERSION ? 1 : 0 );
+		NET_OutOfBandPrint( NS_SERVER, from, "coopInfo \"%s\" \"%s\" %d", coop_name->string,
+			sv_mapname ? sv_mapname->string : "", coop.state == COOP_LINK_ACTIVE ? 1 : 0 );
 		return;
 	}
 	if ( coopFindUntil && coop.state == COOP_LINK_IDLE && !Q_stricmp( c, "coopInfo" ) ) {
 		const char *adr = NET_AdrToString( from );
-		Com_Printf( "COOP: found \"%s\" at %s, map %s%s%s\n", Cmd_Argv( 1 ), adr, Cmd_Argv( 2 ),
-			atoi( Cmd_Argv( 3 ) ) ? ", full" : "", atoi( Cmd_Argv( 4 ) ) ? "" : ", other version" );
+		Com_Printf( "COOP: found \"%s\" at %s, map %s%s\n", Cmd_Argv( 1 ), adr, Cmd_Argv( 2 ),
+			atoi( Cmd_Argv( 3 ) ) ? ", full" : "" );
 		if ( !coopFound++ ) {
 			Cvar_Set( "coop_connectaddr", adr );
 		}
 		return;
 	}
 	if ( coop.role == COOP_ROLE_HOST && !Q_stricmp( c, "coopConnect" ) ) {
-		const int proto = atoi( Cmd_Argv( 1 ) );
-		const int challenge = atoi( Cmd_Argv( 2 ) );
-		if ( proto != COOP_PROTOCOL_VERSION ) {
-			NET_OutOfBandPrint( NS_SERVER, from, "coopReject \"protocol %d, host has %d\"", proto, COOP_PROTOCOL_VERSION );
-			return;
-		}
-		if ( Q_stricmp( Cmd_Argv( 4 ), COOP_BUILD_ID ) ) {	// design 28: both players run the same build
-			NET_OutOfBandPrint( NS_SERVER, from, "coopReject \"different build (host %s, yours %s) - copy the host's game files\"",
-				COOP_BUILD_ID, Cmd_Argv( 4 ) );
-			return;
-		}
-		if ( coop_checkPaks->integer && atoi( Cmd_Argv( 6 ) ) != FS_CoopPakChecksum() ) {	// design 28
-			NET_OutOfBandPrint( NS_SERVER, from, "coopReject \"different game data (pk3 files) than the host - same game version and zz_coop.pk3 needed, or coop_checkPaks 0 on the host\"" );
-			return;
-		}
-		if ( coop_password->string[0] && strcmp( Cmd_Argv( 5 ), coop_password->string ) ) {
+		// no version, build or game data checks: players build on different platforms
+		const int challenge = atoi( Cmd_Argv( 1 ) );
+		if ( coop_password->string[0] && strcmp( Cmd_Argv( 3 ), coop_password->string ) ) {
 			NET_OutOfBandPrint( NS_SERVER, from, "coopReject \"wrong password\"" );
 			return;
 		}
@@ -362,7 +347,7 @@ static void Coop_ConnectionlessPacket( netadr_t from, msg_t *msg ) {
 			return;
 		}
 		coop.challenge = challenge;
-		Q_strncpyz( coop.peerName, Cmd_Argv( 3 ), sizeof( coop.peerName ) );
+		Q_strncpyz( coop.peerName, Cmd_Argv( 2 ), sizeof( coop.peerName ) );
 		NET_OutOfBandPrint( NS_SERVER, from, "coopAccept %d \"%s\"", challenge, coop_name->string );
 		Coop_LinkUp( from );
 		return;
@@ -564,8 +549,8 @@ void Coop_Frame( void ) {
 			NET_IP_Close();
 			Coop_Reset( COOP_ROLE_NONE, COOP_LINK_IDLE );
 		} else if ( now - coop.lastSent >= COOP_CONNECT_RESEND_MS ) {
-			NET_OutOfBandPrint( NS_CLIENT, coop.peer, "coopConnect %d %d \"%s\" \"%s\" \"%s\" %d",
-				COOP_PROTOCOL_VERSION, coop.challenge, coop_name->string, COOP_BUILD_ID, coop_password->string, FS_CoopPakChecksum() );
+			NET_OutOfBandPrint( NS_CLIENT, coop.peer, "coopConnect %d \"%s\" \"%s\"",
+				coop.challenge, coop_name->string, coop_password->string );
 			coop.lastSent = now;
 		}
 		return;
@@ -601,7 +586,6 @@ void Coop_Init( void ) {
 	coop_timeout	= Cvar_Get( "coop_timeout", "20", 0 );
 	coop_debug		= Cvar_Get( "coop_debug", "0", 0 );
 	coop_password	= Cvar_Get( "coop_password", "", 0 );
-	coop_checkPaks	= Cvar_Get( "coop_checkPaks", "1", CVAR_ARCHIVE );	// host: refuse a guest with other game data
 	Cvar_Get( "coop_connectaddr", "", CVAR_ARCHIVE );		// the Coop menu's host address	// host: required from the guest; guest: sent to the host
 	coop_autotest	= Cvar_Get( "coop_autotest", "0", 0 );	// >0: send a coop_test payload of that size on link up
 	coop_autotestCount	= Cvar_Get( "coop_autotestCount", "1", 0 );	// packets in a row that carry the coop_autotest payload

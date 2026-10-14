@@ -1,10 +1,7 @@
 #pragma once
 // Types shared by the engine (code/coop) and the JK2 game DLL for coop replication. Both are always
-// built together: a layout change bumps COOP_EXTRA_VERSION and COOP_PROTOCOL_VERSION.
-// Include after q_shared.h (entityState_t, playerState_t).
+// built together. Include after q_shared.h (entityState_t, playerState_t).
 #include <type_traits>
-
-#define COOP_EXTRA_VERSION	4
 
 typedef enum {
 	COOP_OWNER_NONE		= -1,	// free slot
