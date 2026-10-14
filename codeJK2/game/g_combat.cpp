@@ -745,6 +745,10 @@ void G_StartMatrixEffect( gentity_t *ent, qboolean falling = qfalse, int length 
 	{//already in some slow-mo mode
 		return;
 	}
+	if ( g_coopMode != COOP_MODE_SOLO && ent->s.number != 0 )
+	{//coop: no slow-mo covers the camera spin (and nothing stops a second one), only our own player's death gets it
+		return;
+	}
 
 	gentity_t	*matrix = G_Spawn();
 	if ( matrix )
