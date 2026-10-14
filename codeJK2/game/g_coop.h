@@ -119,6 +119,7 @@ qboolean	G_CoopSaveEnt( const gentity_t *ent );					// WriteGEntities: ours, and
 qboolean	G_CoopNoFriendlyFire( const gentity_t *targ, const gentity_t *attacker );	// G_Damage: players never hurt each other
 void		G_CoopAlliesFollow( void );								// G_RunFrame (host): allies follow player 2 while Kyle is down
 gentity_t	*G_CoopStandIn( void );									// host: the NPC of player 2's character, NULL if none
+gentity_t	*G_CoopHiddenStandIn( const char *npcTargetname );		// Touch_Multi (host): a player sets off the hidden companion's trigger
 void		G_CoopStandInRunFrame( void );							// G_RunFrame: hide / show the stand-in, the guest in cutscenes
 // guns, turrets, cameras owned by who uses them (g_coop_act.cpp, design 26)
 void		G_CoopClaimInit( void );
