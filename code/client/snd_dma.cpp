@@ -1011,6 +1011,12 @@ sfxHandle_t	S_RegisterSound( const char *name)
 		return 0;
 	}
 
+	// coop: a partner's sound event can carry an index only the partner registered, whose configstring
+	// is empty here (cg_event.cpp EV_GENERAL_SOUND) - no sound instead of S_FindName's fatal error
+	if ( !name || !name[0] ) {
+		return 0;
+	}
+
 	if ( strlen( name ) >= MAX_QPATH ) {
 		Com_Printf( S_COLOR_RED"Sound name exceeds MAX_QPATH - %s\n", name );
 		return 0;
