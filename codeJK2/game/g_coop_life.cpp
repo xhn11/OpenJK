@@ -12,9 +12,11 @@ extern void		respawn( gentity_t *ent );
 extern void		G_SetG2PlayerModel( gentity_t * const ent, const char *modelName, const char *customSkin, const char *surfOff, const char *surfOn );
 extern void		target_level_change_use( gentity_t *self, gentity_t *other, gentity_t *activator );
 extern void		WP_SaberInitBladeData( gentity_t *ent );
+extern bool		in_camera;
 
 #define COOP_BOTH_DEAD_MS		3000
 #define COOP_P2STATE_MS			5000
+#define COOP_NEAR_RETRY_MS		5000
 
 static cvar_t	*coop_respawnDelay;
 static int		g_coopDeathTime;		// level.time our player died, 0 alive
@@ -23,6 +25,8 @@ static int		g_coopLastCountdown;
 static int		g_coopNextP2State;
 static qboolean	g_coopNeedSent;
 static qboolean	g_coopArrived;
+static qboolean	g_coopNearPending;		// guest: the host asked us to come next to Kyle
+static int		g_coopNearUntil;		// level.time the tries give up, 0 not started
 static qboolean	g_coopNeedPending;		// host: p2need waits for player 2's character (a loaded save gives Kyle his weapons late)
 static qboolean	g_coopCameWithState;	// guest: playersave was set at InitGame (the host's level change), before the map-start autosave fills it
 
@@ -35,6 +39,7 @@ void G_CoopLifeInit( void ) {
 	g_coopNeedSent = qfalse;
 	g_coopNeedPending = qfalse;
 	g_coopArrived = qfalse;
+	g_coopNearPending = qfalse;
 	char s[16];
 	gi.Cvar_VariableStringBuffer( "playersave", s, sizeof( s ) );
 	g_coopCameWithState = (qboolean)( s[0] != 0 );
@@ -214,14 +219,43 @@ static void G_CoopCmd_P2Restore( void ) {	// guest
 	gi.Printf( "COOP: state restored from the host\n" );
 }
 
-static void G_CoopCmd_Near( void ) {		// guest: just came in, go stand next to Kyle
-	if ( g_coopMode != COOP_MODE_GUEST || !g_entities[0].client ) {
+// guest: just came in, go stand next to Kyle - once the host's world is here (doors and NPCs in their place,
+// Kyle where he is now, not where the command said), trying for a while if there is no free spot yet
+static void G_CoopCmd_Near( void ) {
+	if ( g_coopMode != COOP_MODE_GUEST ) {
 		return;
 	}
-	const vec3_t kyle = { (float)atof( gi.argv( 2 ) ), (float)atof( gi.argv( 3 ) ), (float)atof( gi.argv( 4 ) ) };
-	const float dist = Distance( g_entities[0].currentOrigin, kyle );
-	if ( dist < 48 || dist > 512 ) {	// on top of each other at the spawn point, or far away
-		G_CoopTeleportNear( &g_entities[0], kyle );
+	g_coopNearPending = qtrue;
+	g_coopNearUntil = 0;
+}
+
+static void G_CoopNearFrame( gentity_t *self ) {
+	const gentity_t *kyle = &g_entities[1];
+	if ( !gi.Coop_WorldSynced || !gi.Coop_WorldSynced() || !kyle->inuse || !kyle->client || self->health <= 0 ) {
+		return;		// the host's world is not synced yet (Kyle's puppet comes before the rest of the first snapshot)
+	}
+	if ( in_camera ) {
+		g_coopNearPending = qfalse;		// the cutscene's end places us (design 21)
+		gi.Printf( "COOP: joined in a cutscene, its end places us\n" );
+		return;
+	}
+	if ( !g_coopNearUntil ) {
+		g_coopNearUntil = level.time + COOP_NEAR_RETRY_MS;
+	}
+	const float dist = Distance( self->currentOrigin, kyle->currentOrigin );
+	if ( dist >= 48 && dist <= 128 ) {	// not on top of each other at the spawn point, not far away
+		g_coopNearPending = qfalse;
+		gi.Printf( "COOP: already next to the partner (%.0f away)\n", dist );
+		return;
+	}
+	vec3_t spot;
+	if ( G_CoopFindSpotNear( self, kyle->currentOrigin, spot ) ) {
+		g_coopNearPending = qfalse;
+		G_CoopTeleportNear( self, kyle->currentOrigin );
+	} else if ( level.time >= g_coopNearUntil ) {
+		g_coopNearPending = qfalse;
+		gi.Printf( "COOP: no free spot next to the partner (%.0f %.0f %.0f, %.0f away), staying here\n",
+			kyle->currentOrigin[0], kyle->currentOrigin[1], kyle->currentOrigin[2], dist );
 	}
 }
 
@@ -230,6 +264,7 @@ void G_CoopLifeFrame( void ) {
 	if ( !G_CoopPartnerInWorld() ) {
 		g_coopArrived = qfalse;
 		g_coopNeedSent = qfalse;
+		g_coopNearPending = qfalse;
 		g_coopNeedPending = qfalse;
 		return;
 	}
@@ -248,6 +283,9 @@ void G_CoopLifeFrame( void ) {
 	}
 	if ( g_coopMode != COOP_MODE_GUEST ) {
 		return;
+	}
+	if ( g_coopNearPending ) {
+		G_CoopNearFrame( self );
 	}
 	if ( !g_coopNeedSent ) {
 		g_coopNeedSent = qtrue;

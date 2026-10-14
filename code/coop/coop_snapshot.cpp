@@ -539,6 +539,10 @@ qboolean CoopView_Parse( msg_t *msg ) {
 	return qtrue;
 }
 
+int Coop_WorldSynced( void ) {	// game import: the guest places itself next to Kyle once the host's world is in
+	return CoopSnapshot_InWorld() && rxSynced;
+}
+
 qboolean Coop_PeerViewOrigin( vec3_t org ) {
 	if ( !CoopSnapshot_InWorld() || !rxSynced || !peerViewValid ) {
 		return qfalse;

@@ -1052,6 +1052,7 @@ void SV_InitGameProgs (void) {
 #ifdef JK2_MODE
 	import.Coop_SendGameCommand = Coop_SendGameCommand;
 	import.Coop_PartnerInWorld = Coop_PartnerInWorld;
+	import.Coop_WorldSynced = Coop_WorldSynced;
 #endif
 
 #ifdef JK2_MODE
