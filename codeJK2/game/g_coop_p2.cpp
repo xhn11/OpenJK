@@ -220,6 +220,19 @@ static void G_CoopP2KeepSkin( void ) {
 	gi.G2API_SetSkin( g2, index, skin );
 }
 
+// host: tell the guest who it plays, before anything that depends on it (p2restore: Jan gets no saber);
+// qfalse while that is not decided yet
+qboolean G_CoopP2SendChar( void ) {
+	if ( g_coopP2Char == COOP_P2_NONE ) {
+		return qfalse;
+	}
+	if ( !g_coopP2Sent ) {
+		g_coopP2Sent = qtrue;
+		G_CoopSend( "p2char %s", G_CoopP2Name() );
+	}
+	return qtrue;
+}
+
 // host, every frame: decide the character once Kyle is in, tell the guest, keep Luke's Force in step (guest: our skin)
 void G_CoopP2Frame( void ) {
 	if ( g_coopMode == COOP_MODE_GUEST ) {
@@ -244,10 +257,7 @@ void G_CoopP2Frame( void ) {
 		memset( g_coopP2ForceSent, -1, sizeof( g_coopP2ForceSent ) );
 		return;
 	}
-	if ( !g_coopP2Sent ) {
-		g_coopP2Sent = qtrue;
-		G_CoopSend( "p2char %s", G_CoopP2Name() );
-	}
+	G_CoopP2SendChar();
 	if ( g_coopP2Char != COOP_P2_LUKE || level.time < g_coopP2NextForceCheck ) {
 		return;
 	}

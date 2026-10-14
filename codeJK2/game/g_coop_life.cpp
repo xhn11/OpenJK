@@ -23,6 +23,8 @@ static int		g_coopLastCountdown;
 static int		g_coopNextP2State;
 static qboolean	g_coopNeedSent;
 static qboolean	g_coopArrived;
+static qboolean	g_coopNeedPending;		// host: p2need waits for player 2's character (a loaded save gives Kyle his weapons late)
+static qboolean	g_coopCameWithState;	// guest: playersave was set at InitGame (the host's level change), before the map-start autosave fills it
 
 void G_CoopLifeInit( void ) {
 	coop_respawnDelay = gi.cvar( "coop_respawnDelay", "10", CVAR_ARCHIVE );
@@ -31,7 +33,11 @@ void G_CoopLifeInit( void ) {
 	g_coopLastCountdown = -1;
 	g_coopNextP2State = 0;
 	g_coopNeedSent = qfalse;
+	g_coopNeedPending = qfalse;
 	g_coopArrived = qfalse;
+	char s[16];
+	gi.Cvar_VariableStringBuffer( "playersave", s, sizeof( s ) );
+	g_coopCameWithState = (qboolean)( s[0] != 0 );
 	// the host keeps the guest's last state (design 23); a fresh host starts without one
 	gi.cvar( "coop_p2save", "", 0 );
 	gi.cvar( "coop_p2ammo", "", 0 );
@@ -165,10 +171,7 @@ static void G_CoopCmd_P2State( void ) {		// host
 	gi.cvar_set( "coop_p2fplvl", gi.argv( 5 ) );
 }
 
-static void G_CoopCmd_P2Need( void ) {		// host: the guest came in without its state
-	if ( g_coopMode != COOP_MODE_HOST ) {
-		return;
-	}
+static void G_CoopAnswerNeed( void ) {		// host
 	char save[256], ammo[256], inv[256], fplvl[256];
 	gi.Cvar_VariableStringBuffer( "coop_p2save", save, sizeof( save ) );
 	gi.Cvar_VariableStringBuffer( "coop_p2ammo", ammo, sizeof( ammo ) );
@@ -183,6 +186,17 @@ static void G_CoopCmd_P2Need( void ) {		// host: the guest came in without its s
 	}
 }
 
+static void G_CoopCmd_P2Need( void ) {		// host: the guest came in without its state
+	if ( g_coopMode != COOP_MODE_HOST ) {
+		return;
+	}
+	if ( !G_CoopP2SendChar() ) {
+		g_coopNeedPending = qtrue;
+		return;
+	}
+	G_CoopAnswerNeed();
+}
+
 static void G_CoopCmd_P2Restore( void ) {	// guest
 	gentity_t *ent = &g_entities[0];
 	if ( g_coopMode != COOP_MODE_GUEST || !ent->client ) {
@@ -193,10 +207,10 @@ static void G_CoopCmd_P2Restore( void ) {	// guest
 	gi.cvar_set( "playerinv", gi.argv( 4 ) );
 	gi.cvar_set( "playerfplvl", gi.argv( 5 ) );
 	Player_RestoreFromPrevLevel( ent );
+	G_CoopP2Restrict( ent );	// Jan: Kyle's saber goes before it gets a saber entity
 	if ( ent->client->ps.stats[STAT_WEAPONS] & ( 1 << WP_SABER ) ) {
 		WP_SaberInitBladeData( ent );
 	}
-	G_CoopP2Restrict( ent );
 	gi.Printf( "COOP: state restored from the host\n" );
 }
 
@@ -216,6 +230,7 @@ void G_CoopLifeFrame( void ) {
 	if ( !G_CoopPartnerInWorld() ) {
 		g_coopArrived = qfalse;
 		g_coopNeedSent = qfalse;
+		g_coopNeedPending = qfalse;
 		return;
 	}
 	if ( !self->inuse || !self->client ) {
@@ -227,14 +242,18 @@ void G_CoopLifeFrame( void ) {
 			G_CoopSend( "near %.0f %.0f %.0f", self->currentOrigin[0], self->currentOrigin[1], self->currentOrigin[2] );
 		}
 	}
+	if ( g_coopNeedPending && G_CoopP2SendChar() ) {
+		g_coopNeedPending = qfalse;
+		G_CoopAnswerNeed();
+	}
 	if ( g_coopMode != COOP_MODE_GUEST ) {
 		return;
 	}
 	if ( !g_coopNeedSent ) {
 		g_coopNeedSent = qtrue;
-		char s[16];
-		gi.Cvar_VariableStringBuffer( "playersave", s, sizeof( s ) );
-		if ( !s[0] ) {
+		if ( !g_coopCameWithState ) {
+			g_coopCameWithState = qtrue;	// once per level
+			gi.Printf( "COOP: came without a carried state, asking the host for it\n" );
 			G_CoopSend( "p2need" );		// we came with "map", not with the host's level change
 		}
 	}

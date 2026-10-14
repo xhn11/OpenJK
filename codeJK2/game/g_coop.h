@@ -98,6 +98,7 @@ void		G_CoopP2Frame( void );									// G_RunFrame (host): decide, tell the gues
 void		G_CoopP2Command( const char *name );
 const char	*G_CoopP2Name( void );									// "jan" / "luke"
 qboolean	G_CoopP2HasForce( void );
+qboolean	G_CoopP2SendChar( void );								// host: p2char now, qfalse while undecided
 void		G_CoopP2Restrict( gentity_t *ent );						// guest as Jan: no saber, no Force
 qboolean	G_CoopFindSpotNear( gentity_t *ent, const vec3_t org, vec3_t out );
 void		G_CoopTeleportNear( gentity_t *ent, const vec3_t org );	// next to org, never telefragging
