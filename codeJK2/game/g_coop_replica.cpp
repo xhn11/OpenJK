@@ -330,6 +330,11 @@ void G_Coop_ApplyEntity( int entNum, const entityState_t *es, const playerState_
 	if ( es->eType == ET_SPEAKER && ( es->clientNum == 0 || es->clientNum == 1 ) ) {
 		ent->s.clientNum = 1 - es->clientNum;	// random * 10, no entity
 	}
+	if ( !ent->client && !ent->bmodel && es->solid == SOLID_BMODEL && es->modelindex > 0 ) {
+		// a map brush entity we freed while the host hid it, rebuilt from its classname: without its inline
+		// model cgame draws model_draw[modelindex] (nothing or a wrong model) and linking makes it a box
+		gi.SetBrushModel( ent, va( "*%d", es->modelindex ) );
+	}
 	if ( !fresh && es->eType == ET_MOVER ) {
 		if ( G_CoopKeepLocalMove( &localPos, &es->pos ) ) {
 			ent->s.pos = localPos;
