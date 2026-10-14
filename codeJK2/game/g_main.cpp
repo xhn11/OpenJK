@@ -693,6 +693,7 @@ void InitGame(  const char *mapname, const char *spawntarget, int checkSum, cons
 
 	// parse the key/value pairs and spawn gentities
 	G_SpawnEntitiesFromString( entities );
+	G_CoopTriggerRecordSpawn();		// coop: before a save load replaces them
 
 	// general initialization
 	G_FindTeams();

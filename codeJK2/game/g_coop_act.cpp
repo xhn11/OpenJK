@@ -675,8 +675,42 @@ static void G_CoopCmd_Secret( void ) {		// secrets are shared
 // ---------------------------------------------------------------- physical triggers (design 17)
 // The guest runs trigger_push / trigger_teleport / trigger_hurt for its own player from its own map
 // copy; whether one is switched on or off is the host's (scripts), so the host sends the changes.
+// A trigger_hurt also switches by linking (hurt_use), and a removed trigger (REMOVE) is off.
 
-static signed char g_coopTrigSent[MAX_GENTITIES];	// -1 unknown, 0 inactive, 1 active
+static signed char g_coopTrigSpawn[MAX_GENTITIES];	// -1 no physical trigger here, else on/off as the map spawns it
+static signed char g_coopTrigSent[MAX_GENTITIES];	// -1 nothing sent: the guest's copy is as spawned, 0 off, 1 on
+static qboolean		g_coopTrigChanged[MAX_GENTITIES];	// a trig went out for it since the guest came: the re-send covers it
+static int			g_coopTrigResendTime;			// level.time of the next re-send of the changed triggers
+static int			g_coopTrigResendNext;			// where that re-send goes on
+
+#define COOP_TRIG_RESEND_MS		2000
+#define COOP_TRIG_RESEND_MAX	16		// per re-send: a longer list goes out over the next ones
+
+void G_CoopTriggerInit( void ) {
+	memset( g_coopTrigSpawn, -1, sizeof( g_coopTrigSpawn ) );
+	memset( g_coopTrigSent, -1, sizeof( g_coopTrigSent ) );
+	memset( g_coopTrigChanged, 0, sizeof( g_coopTrigChanged ) );
+	g_coopTrigResendTime = 0;
+	g_coopTrigResendNext = MAX_CLIENTS;
+}
+
+static signed char G_CoopTriggerSpawnState( const gentity_t *ent ) {	// InitTrigger, SP_trigger_hurt START_OFF
+	return ( ( ent->spawnflags & 128 ) || ( !Q_stricmp( ent->classname, "trigger_hurt" ) && ( ent->spawnflags & 1 ) ) ) ? 0 : 1;
+}
+
+// InitGame, after G_SpawnEntitiesFromString: a loaded save replaces the entities later, a trigger the
+// save no longer has (REMOVEd before the save) is known all the same and the frame sends it off
+void G_CoopTriggerRecordSpawn( void ) {
+	if ( g_coopMode != COOP_MODE_HOST ) {
+		return;
+	}
+	for ( int i = MAX_CLIENTS; i < globals.num_entities; i++ ) {
+		const gentity_t *ent = &g_entities[i];
+		if ( ent->inuse && G_CoopIsPhysicalTrigger( ent ) ) {
+			g_coopTrigSpawn[i] = G_CoopTriggerSpawnState( ent );
+		}
+	}
+}
 
 void G_CoopTriggerFrame( void ) {
 	static qboolean hadPartner;
@@ -685,24 +719,49 @@ void G_CoopTriggerFrame( void ) {
 	}
 	const qboolean partner = G_CoopPartnerInWorld();
 	if ( !partner || !hadPartner ) {
-		memset( g_coopTrigSent, -1, sizeof( g_coopTrigSent ) );	// a (new) guest gets every state
+		memset( g_coopTrigSent, -1, sizeof( g_coopTrigSent ) );	// a (new) guest gets every change since the spawn
+		memset( g_coopTrigChanged, 0, sizeof( g_coopTrigChanged ) );
+		g_coopTrigResendTime = level.time + COOP_TRIG_RESEND_MS;
 	}
 	hadPartner = partner;
-	if ( !partner ) {
-		return;
-	}
 	for ( int i = MAX_CLIENTS; i < globals.num_entities; i++ ) {
 		const gentity_t *ent = &g_entities[i];
-		if ( !ent->inuse || !G_CoopIsPhysicalTrigger( ent ) ) {
+		signed char active = 0;		// removed, or its slot reused by something else
+		if ( ent->inuse && G_CoopIsPhysicalTrigger( ent ) ) {
+			const qboolean hurt = (qboolean)!Q_stricmp( ent->classname, "trigger_hurt" );
+			if ( g_coopTrigSpawn[i] == -1 ) {	// spawned after the map
+				g_coopTrigSpawn[i] = G_CoopTriggerSpawnState( ent );
+			}
+			active = ( !( ent->svFlags & SVF_INACTIVE ) && ( ent->linked || !hurt ) ) ? 1 : 0;
+		} else if ( g_coopTrigSpawn[i] == -1 ) {
 			continue;
 		}
-		const signed char active = ( ent->svFlags & SVF_INACTIVE ) ? 0 : 1;
-		if ( g_coopTrigSent[i] == active || ( g_coopTrigSent[i] == -1 && active ) ) {
-			g_coopTrigSent[i] = active;		// active is how the map starts: nothing to send
+		if ( !partner ) {
 			continue;
 		}
+		const signed char guest = g_coopTrigSent[i] == -1 ? g_coopTrigSpawn[i] : g_coopTrigSent[i];
 		g_coopTrigSent[i] = active;
-		G_CoopSend( "trig %d %d", i, active );
+		if ( active != guest ) {
+			G_CoopSend( "trig %d %d", i, active );
+			g_coopTrigChanged[i] = qtrue;
+		}
+	}
+	// G_CoopSend can't tell when a full reliable queue dropped a trig (a one-shot REMOVE would stay
+	// wrong for the level): now and then each trigger we switched goes out again, also one back as spawned
+	if ( !partner || ( level.time < g_coopTrigResendTime && g_coopTrigResendTime - level.time <= COOP_TRIG_RESEND_MS ) ) {
+		return;		// (a loaded save may have moved level.time back)
+	}
+	g_coopTrigResendTime = level.time + COOP_TRIG_RESEND_MS;
+	const int count = globals.num_entities - MAX_CLIENTS;
+	const int start = g_coopTrigResendNext - MAX_CLIENTS;	// fixed for the pass: each trigger goes out at most once
+	int sent = 0;
+	for ( int n = 0; n < count && sent < COOP_TRIG_RESEND_MAX; n++ ) {
+		const int i = MAX_CLIENTS + ( start + n ) % count;
+		if ( g_coopTrigChanged[i] && g_coopTrigSent[i] != -1 ) {
+			G_CoopSend( "trig %d %d", i, g_coopTrigSent[i] );
+			g_coopTrigResendNext = i + 1;
+			sent++;
+		}
 	}
 }
 
@@ -711,9 +770,17 @@ static void G_CoopCmd_Trigger( void ) {		// guest
 	if ( g_coopMode != COOP_MODE_GUEST || !ent || !G_CoopIsPhysicalTrigger( ent ) ) {
 		return;
 	}
-	if ( atoi( gi.argv( 3 ) ) ) {
+	const qboolean active = (qboolean)( atoi( gi.argv( 3 ) ) != 0 );
+	const qboolean hurt = (qboolean)!Q_stricmp( ent->classname, "trigger_hurt" );
+	if ( active ) {
 		ent->svFlags &= ~SVF_INACTIVE;
+		if ( hurt ) {
+			gi.linkentity( ent );
+		}
 	} else {
 		ent->svFlags |= SVF_INACTIVE;
+		if ( hurt ) {
+			gi.unlinkentity( ent );
+		}
 	}
 }
