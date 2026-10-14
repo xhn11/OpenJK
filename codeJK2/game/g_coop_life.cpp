@@ -12,6 +12,7 @@ extern void		respawn( gentity_t *ent );
 extern void		G_SetG2PlayerModel( gentity_t * const ent, const char *modelName, const char *customSkin, const char *surfOff, const char *surfOn );
 extern void		target_level_change_use( gentity_t *self, gentity_t *other, gentity_t *activator );
 extern void		WP_SaberInitBladeData( gentity_t *ent );
+extern void		G_CreateG2AttachedWeaponModel( gentity_t *ent, const char *weaponModel );
 extern bool		in_camera;
 
 #define COOP_BOTH_DEAD_MS		3000
@@ -25,6 +26,8 @@ static int		g_coopLastCountdown;
 static int		g_coopNextP2State;
 static qboolean	g_coopNeedSent;
 static qboolean	g_coopArrived;
+static int		g_coopThrowKnown = -1;	// saber throw while alive (the bit, -1 unknown): dropping the saber at death grants it
+static int		g_coopThrowLevel;
 static qboolean	g_coopNearPending;		// guest: the host asked us to come next to Kyle
 static int		g_coopNearUntil;		// level.time the tries give up, 0 not started
 static qboolean	g_coopNeedPending;		// host: p2need waits for player 2's character (a loaded save gives Kyle his weapons late)
@@ -39,6 +42,7 @@ void G_CoopLifeInit( void ) {
 	g_coopNeedSent = qfalse;
 	g_coopNeedPending = qfalse;
 	g_coopArrived = qfalse;
+	g_coopThrowKnown = -1;
 	g_coopNearPending = qfalse;
 	char s[16];
 	gi.Cvar_VariableStringBuffer( "playersave", s, sizeof( s ) );
@@ -77,6 +81,27 @@ static void G_CoopRevive( gentity_t *ent, const vec3_t near ) {
 	ent->e_DieFunc = dieF_player_die;
 	VectorCopy( playerMins, ent->mins );
 	VectorCopy( playerMaxs, ent->maxs );
+	if ( cl->ps.stats[STAT_WEAPONS] & ( 1 << WP_SABER ) ) {
+		// the death dropped the saber or freed it (player_die): a new one in the hand, as ClientSpawn makes it
+		const int saberNum = cl->ps.saberEntityNum;
+		if ( saberNum > 0 && saberNum < ENTITYNUM_WORLD && g_entities[saberNum].inuse && g_entities[saberNum].owner == ent ) {
+			G_FreeEntity( &g_entities[saberNum] );
+		}
+		cl->ps.saberEntityNum = ENTITYNUM_NONE;
+		cl->ps.saberInFlight = qfalse;
+		cl->ps.saberActive = qfalse;
+		WP_SaberInitBladeData( ent );
+	}
+	if ( g_coopThrowKnown >= 0 ) {		// WP_SaberLose gave saber throw level 1
+		cl->ps.forcePowersKnown = ( cl->ps.forcePowersKnown & ~( 1 << FP_SABERTHROW ) ) | g_coopThrowKnown;
+		cl->ps.forcePowerLevel[FP_SABERTHROW] = g_coopThrowLevel;
+	}
+	if ( ent->weaponModel == -1 && cl->ps.weapon == WP_SABER && cl->ps.saberModel ) {
+		G_CreateG2AttachedWeaponModel( ent, cl->ps.saberModel );
+	} else if ( ent->weaponModel == -1 && cl->ps.weapon > WP_NONE && cl->ps.weapon < WP_NUM_WEAPONS && weaponData[cl->ps.weapon].weaponMdl[0] ) {
+		G_CreateG2AttachedWeaponModel( ent, weaponData[cl->ps.weapon].weaponMdl );
+	}
+	G_CoopP2Restrict( ent );
 	cl->ps.legsAnimTimer = cl->ps.torsoAnimTimer = 0;
 	NPC_SetAnim( ent, SETANIM_BOTH, BOTH_STAND2, SETANIM_FLAG_OVERRIDE );
 	G_CoopTeleportNear( ent, near );
@@ -261,6 +286,10 @@ static void G_CoopNearFrame( gentity_t *self ) {
 
 void G_CoopLifeFrame( void ) {
 	gentity_t *self = &g_entities[0];
+	if ( self->client && self->health > 0 ) {
+		g_coopThrowKnown = self->client->ps.forcePowersKnown & ( 1 << FP_SABERTHROW );
+		g_coopThrowLevel = self->client->ps.forcePowerLevel[FP_SABERTHROW];
+	}
 	if ( !G_CoopPartnerInWorld() ) {
 		g_coopArrived = qfalse;
 		g_coopNeedSent = qfalse;
