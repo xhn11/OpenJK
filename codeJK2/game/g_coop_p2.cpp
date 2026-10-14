@@ -194,8 +194,36 @@ void G_CoopP2Command( const char *name ) {
 	}
 }
 
-// host, every frame: decide the character once Kyle is in, tell the guest, keep Luke's Force in step
+// guest: our Jan / Luke is built before the host's configstrings arrive, and the sync can overwrite its
+// skin slot (CS_CHARSKINS) with one of the host's skins, which cgame then puts on our model every frame
+static void G_CoopP2KeepSkin( void ) {
+	gentity_t *ent = &g_entities[0];
+	if ( g_coopP2Char == COOP_P2_NONE || !ent->inuse || !ent->client || !ent->NPC_type
+		|| ent->playerModel < 0 || ent->playerModel >= ent->ghoul2.size() || ent->ghoul2[ent->playerModel].mCustomSkin <= 0 ) {
+		return;
+	}
+	CGhoul2Info *g2 = &ent->ghoul2[ent->playerModel];
+	char name[MAX_QPATH], slot[MAX_QPATH];
+	Com_sprintf( name, sizeof( name ), "models/players/%s/model_default.skin", ent->NPC_type );
+	gi.GetConfigstring( CS_CHARSKINS + g2->mCustomSkin, slot, sizeof( slot ) );
+	if ( !Q_stricmp( slot, name ) ) {
+		return;
+	}
+	const int skin = gi.RE_RegisterSkin( name );
+	if ( !skin ) {
+		return;
+	}
+	const int index = G_SkinIndex( name );
+	gi.Printf( "COOP: our skin slot %d became \"%s\", %s is slot %d now\n", g2->mCustomSkin, slot, name, index );
+	gi.G2API_SetSkin( g2, index, skin );
+}
+
+// host, every frame: decide the character once Kyle is in, tell the guest, keep Luke's Force in step (guest: our skin)
 void G_CoopP2Frame( void ) {
+	if ( g_coopMode == COOP_MODE_GUEST ) {
+		G_CoopP2KeepSkin();
+		return;
+	}
 	if ( g_coopMode != COOP_MODE_HOST ) {
 		return;
 	}
