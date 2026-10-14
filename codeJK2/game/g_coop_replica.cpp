@@ -346,10 +346,16 @@ void G_Coop_ApplyEntity( int entNum, const entityState_t *es, const playerState_
 	if ( ent->client && ps ) {
 		char *saberModel = ent->client->ps.saberModel;	// a pointer into this machine's memory (plan-M3 R1)
 		const int saberEntityNum = ent->client->ps.saberEntityNum;	// the puppet's saber entity is ours
+		if ( entNum == 1 ) {
+			// the AI's stealth check counts turning from lastAngles, which only ClientThink sets: from the
+			// previous snapshot's view, not from 0 0 0 (the puppet's yaw itself would count as turning)
+			VectorCopy( fresh ? ps->viewangles : ent->client->ps.viewangles, ent->lastAngles );
+		}
 		ent->client->ps = *ps;
 		ent->client->ps.saberModel = saberModel;
 		if ( entNum == 1 ) {
 			ent->client->ps.saberEntityNum = saberEntityNum;
+			ent->client->usercmd.upmove = ( ps->pm_flags & PMF_DUCKED ) ? -127 : 0;	// the AI sees crouching here
 		}
 		ent->client->usercmd.buttons = ex->buttons;
 	}

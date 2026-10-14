@@ -318,14 +318,16 @@ static void G_CoopCmd_Throw( void ) {
 #define COOP_ALERT_INTERVAL_MS	100
 
 void G_CoopForwardAlert( int type, const gentity_t *owner, const vec3_t pos, float radius, int alertLevel, float extra ) {
-	static int lastSent[2];
+	static int lastSent[2], lastLevel[2];
 	if ( owner != &g_entities[0] || !G_CoopPartnerInWorld() || type < 0 || type > 1 ) {
 		return;
 	}
-	if ( alertLevel < AEL_DANGER && level.time - lastSent[type] < COOP_ALERT_INTERVAL_MS && level.time >= lastSent[type] ) {
-		return;		// footsteps and the like: a few per second is enough
+	if ( alertLevel < AEL_DANGER && alertLevel <= lastLevel[type] && level.time - lastSent[type] < COOP_ALERT_INTERVAL_MS
+		&& level.time >= lastSent[type] ) {
+		return;		// footsteps and the like: a few per second is enough (a shot after a step still goes)
 	}
 	lastSent[type] = level.time;
+	lastLevel[type] = alertLevel;
 	G_CoopSend( "alert %d %.0f %.0f %.0f %.0f %d %.2f", type, pos[0], pos[1], pos[2], radius, alertLevel, extra );
 }
 
@@ -361,6 +363,16 @@ void G_CoopRunPuppet( gentity_t *ent ) {
 		return;
 	}
 	if ( g_coopMode == COOP_MODE_HOST ) {
+		if ( !ent->lightLevel ) {
+			// only cgame sets it, while it draws the puppet (not before, in a video, while hidden): 0 is
+			// "too dark" to the AI's stealth check. The same value as CG_GetPlayerLightLevel
+			vec3_t ambient = { 0 }, directed, lightDir;
+			cgi_R_GetLighting( ent->currentOrigin, ambient, directed, lightDir );
+			ent->lightLevel = directed[0] > directed[1] ? directed[0] : directed[1];
+			if ( directed[2] > ent->lightLevel ) {
+				ent->lightLevel = directed[2];
+			}
+		}
 		G_TouchTriggers( ent );
 		return;
 	}
